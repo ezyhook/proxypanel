@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Свои конфиги и секреты — не коммитить.
+# В репозитории только proxies.example.yaml и examples/ с ненастоящими ключами.
+proxies.yaml
+*.yaml.bak
+.clash_secret
+state.json
+run/
+*.key
+*.pem
+
+# Редакторы и система
+.idea/
+.vscode/
+*.swp
+.DS_Store

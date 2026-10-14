@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ProxyPanel</title>
+<style>
+:root{
+  --bg:#0f1115;--panel:#171a21;--panel2:#1e222b;--line:#2a2f3a;--text:#e6e8ee;--mute:#8b93a5;
+  --acc:#6ea8fe;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--chip:#252a35;
+  --mono:ui-monospace,SFMono-Regular,"JetBrains Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: light){
+  :root{--bg:#f5f6f8;--panel:#fff;--panel2:#f0f2f5;--line:#dfe3ea;--text:#1d2330;--mute:#5d6678;--chip:#eef1f5}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line);
+  display:flex;gap:14px;align-items:center;padding:10px 20px;flex-wrap:wrap}
+h1{font-size:16px;margin:0;letter-spacing:.3px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--mute);margin:26px 0 10px;
+  display:flex;align-items:center;gap:10px}
+h2 .sub{text-transform:none;letter-spacing:0;font-weight:400;font-size:12.5px}
+h2 button{margin-left:auto;text-transform:none;letter-spacing:0}
+main{max-width:1200px;margin:0 auto;padding:4px 20px 40px}
+.entry{display:flex;gap:10px;align-items:center;font-family:var(--mono);font-size:13px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.spacer{flex:1}
+nav{display:flex;gap:4px}
+nav a{color:var(--mute);text-decoration:none;padding:4px 9px;border-radius:6px;font-size:13px}
+nav a:hover{color:var(--text);background:var(--panel2)}
+nav a .badge{background:var(--acc);color:#0b1020;border-radius:9px;padding:0 6px;font-size:11px;font-weight:700;margin-left:4px}
+button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);
+  border-radius:6px;padding:5px 10px;cursor:pointer}
+button:hover{border-color:var(--acc)}
+button.primary{background:var(--acc);border-color:var(--acc);color:#0b1020;font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;background:var(--mute);flex:none}
+.dot.active{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+.dot.activating,.dot.deactivating,.dot.reloading,.dot.warn{background:var(--warn)}
+.dot.failed,.dot.error{background:var(--bad)}
+.dot.ok{background:var(--ok)}
+.dot.info{background:var(--acc)}
+.banner{background:color-mix(in srgb,var(--bad) 15%,var(--panel));border:1px solid var(--bad);
+  border-radius:8px;padding:10px 14px;margin-top:16px;white-space:pre-wrap;font-family:var(--mono);font-size:12px}
+.banner.warn{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,var(--panel))}
+.groups{display:flex;flex-direction:column;gap:10px}
+.group{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.group .gh{display:flex;gap:8px;align-items:baseline;margin-bottom:8px}
+.group .gh b{font-family:var(--mono)}
+.tag{font-size:11px;color:var(--mute);border:1px solid var(--line);border-radius:4px;padding:0 5px;white-space:nowrap}
+.tag.native{color:var(--acc);border-color:color-mix(in srgb,var(--acc) 50%,var(--line))}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-family:var(--mono);font-size:12.5px;background:var(--chip);border:1px solid var(--line);
+  border-radius:16px;padding:4px 11px;cursor:pointer;display:flex;gap:6px;align-items:center}
+.chip.now{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 22%,var(--panel))}
+.chip.ro{cursor:default}
+.chip small{color:var(--mute)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+  display:flex;flex-direction:column;gap:8px}
+.card .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.card .name{font-family:var(--mono);font-weight:600;font-size:14px}
+.card .desc{color:var(--mute);font-size:12.5px}
+.chain{display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-family:var(--mono);font-size:12px}
+.chain .hop{background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:0 6px}
+.chain .hop.me{border-color:var(--acc)}
+.chain .arr{color:var(--mute)}
+.chain .hop.obfs{border-style:dashed;color:var(--mute)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:12.5px}
+.kv>span:nth-child(odd){color:var(--mute)}
+.kv>span:nth-child(even){font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}.mute{color:var(--mute)}
+.actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.actions button{padding:3px 9px;font-size:12.5px}
+.switch{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--mute);margin-left:auto;cursor:pointer;user-select:none}
+.switch input{accent-color:var(--acc)}
+table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle}
+th{color:var(--mute);font-weight:500;font-size:12px;background:var(--panel2)}
+tr:last-child td{border-bottom:0}
+td.mono,td .mono{font-family:var(--mono)}
+td small{display:block;color:var(--mute);font-size:11.5px;font-family:var(--mono);max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+td .acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+td .acts button{padding:3px 9px;font-size:12.5px}
+.tblwrap{overflow-x:auto}
+.events{background:var(--panel);border:1px solid var(--line);border-radius:10px;max-height:340px;overflow:auto}
+.ev{display:grid;grid-template-columns:auto auto 110px 1fr;gap:10px;align-items:center;padding:6px 12px;
+  border-bottom:1px solid var(--line);font-size:12.5px}
+.ev:last-child{border-bottom:0}
+.ev time{font-family:var(--mono);color:var(--mute);font-size:12px}
+.ev .src{font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;padding:0;
+  width:min(1000px,94vw);max-height:88vh}
+dialog::backdrop{background:#0008}
+.dh{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.dh b{font-family:var(--mono)}
+.db{padding:12px 14px}
+pre.log{margin:0;height:64vh;overflow:auto;font:12px/1.45 var(--mono);white-space:pre-wrap;word-break:break-all}
+textarea{width:100%;height:62vh;background:var(--bg);color:var(--text);border:1px solid var(--line);
+  border-radius:8px;padding:10px;font:12.5px/1.5 var(--mono);resize:vertical;tab-size:2}
+#toasts{position:fixed;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:50}
+.edbar{display:flex;align-items:flex-start;gap:10px;margin-top:10px;font-size:13px;min-height:30px}
+.edbar #edStatus{flex:1;white-space:pre-wrap;font-family:var(--mono);font-size:12px;padding:6px 10px;border-radius:6px;
+  border:1px solid var(--line);background:var(--panel2);color:var(--mute);max-height:22vh;overflow:auto}
+.edbar #edStatus.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 50%,var(--line))}
+.edbar #edStatus.err{color:var(--text);border-color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,var(--panel))}
+.edbar #edStatus.warn{color:var(--text);border-color:var(--warn);background:color-mix(in srgb,var(--warn) 12%,var(--panel))}
+.edbar #edStatus.busy{color:var(--acc)}
+.banner.pending{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 12%,var(--panel));font-family:inherit;
+  font-size:13.5px;display:flex;align-items:center;gap:12px;white-space:normal}
+.banner.pending button{margin-left:auto}
+#applyBtn.attn{box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 45%,transparent);animation:attn 1.6s ease-in-out infinite}
+@keyframes attn{50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--acc) 15%,transparent)}}
+@media (prefers-reduced-motion:reduce){#applyBtn.attn{animation:none}}
+.dh .dirty{color:var(--warn);font-size:12px;white-space:nowrap}
+#edDlg[open]{display:flex;flex-direction:column;height:88vh}
+#edDlg .db{flex:1;min-height:0;display:flex;flex-direction:column}
+#edDlg textarea{flex:1;height:auto;min-height:160px;resize:none}
+#edDlg .edbar{flex:none}
+#edPath{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}
+.toast{background:var(--panel2);border:1px solid var(--line);border-left:4px solid var(--acc);border-radius:8px;
+  padding:9px 12px;max-width:460px;white-space:pre-wrap;font-size:13px;box-shadow:0 6px 20px #0005}
+.toast.err{border-left-color:var(--bad)}
+.empty{color:var(--mute);padding:16px;border:1px dashed var(--line);border-radius:10px}
+.empty code{font-family:var(--mono);color:var(--text);background:var(--chip);padding:1px 5px;border-radius:4px}
+.urls{display:flex;flex-direction:column;background:var(--panel2);border:1px solid var(--line);border-radius:6px}
+.url{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:12.5px;padding:3px 4px 3px 8px}
+.url+.url{border-top:1px solid var(--line)}
+.url span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.url .lbl{flex:none;width:44px;color:var(--mute);font-size:11px;font-family:inherit}
+.url button,.url a.btn{padding:1px 8px;font-size:12px}
+a.btn{color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;text-decoration:none;font-family:system-ui,sans-serif}
+a.btn:hover{border-color:var(--acc)}
+.apps td small{max-width:none}
+.wrap{display:flex;align-items:center;gap:8px;font-size:12.5px;border-top:1px dashed var(--line);padding-top:8px}
+.wrap .mono{font-family:var(--mono);font-size:12px;flex:1;word-break:break-all}
+.wrap button{padding:1px 8px;font-size:12px}
+.prob{border:1px solid var(--bad);background:color-mix(in srgb,var(--bad) 10%,var(--panel));border-radius:6px;
+  padding:6px 9px;font-size:12.5px;display:flex;flex-direction:column;gap:3px}
+.prob b{color:var(--bad);font-weight:600}
+.prob code{font-family:var(--mono);font-size:11.5px;word-break:break-all;color:var(--text)}
+.card.bad{border-color:color-mix(in srgb,var(--bad) 55%,var(--line))}
+@media (max-width:640px){
+  header{padding:10px 16px} main{padding:4px 16px 40px}
+  .ev{grid-template-columns:auto auto 1fr;row-gap:2px}
+  .ev>span:last-child{grid-column:1/-1}
+  h2{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>ProxyPanel</h1>
+  <div class="entry" id="entry"><span class="dot"></span><span>…</span></div>
+  <nav>
+    <a href="#s-tun">Туннели</a><a href="#s-apps">Приложения</a><a href="#s-out">Комбинатор</a><a href="#s-comp" id="navComp">Компоненты</a><a href="#s-ev">События</a>
+  </nav>
+  <div class="spacer"></div>
+  <button onclick="checkAll()" title="Проверить все туннели сейчас">⟳ Проверить</button>
+  <button onclick="openEditor()">Конфиг</button>
+  <button class="primary" id="applyBtn" onclick="applyCfg()">Применить</button>
+</header>
+<main>
+  <div id="banners"></div>
+
+  <h2 id="s-tun">Туннели <span class="sub">каждый — отдельный процесс и свой порт</span></h2>
+  <div id="tunnels" class="grid"></div>
+
+  <h2 id="s-apps">Приложения <span class="sub">ярлыки в меню и запуск через pp-run</span></h2>
+  <div id="apps"></div>
+
+  <h2 id="s-out">Комбинатор <span class="sub" id="combMeta">опция: единый вход с автовыбором поверх тех же туннелей</span></h2>
+  <div id="groups" class="groups"></div>
+
+  <h2 id="s-comp">Компоненты <span class="sub" id="compMeta"></span>
+    <button onclick="checkUpdates(this)">Проверить обновления</button></h2>
+  <div class="tblwrap"><table>
+    <thead><tr><th>Компонент</th><th>Установлено</th><th>Последняя версия</th><th>Используют</th><th></th></tr></thead>
+    <tbody id="comps"><tr><td colspan="5" class="mute">…</td></tr></tbody>
+  </table></div>
+
+  <h2 id="s-ev">События <span class="sub" id="notifyMeta"></span>
+    <button onclick="testNotify()">Тест уведомления</button></h2>
+  <div class="events" id="events"></div>
+</main>
+
+<dialog id="logDlg">
+  <div class="dh"><span>Логи</span><b id="logName"></b><span class="spacer"></span>
+    <label class="switch"><input type="checkbox" id="logFollow" checked> автопрокрутка</label>
+    <button onclick="closeLogs()">Закрыть</button></div>
+  <div class="db"><pre class="log" id="logBody"></pre></div>
+</dialog>
+
+<dialog id="edDlg">
+  <div class="dh"><span>proxies.yaml</span><b id="edPath" class="mute" style="font-weight:400"></b>
+    <span class="dirty" id="edDirty" hidden>● не сохранено</span>
+    <span class="spacer"></span>
+    <button id="edSave" onclick="saveCfg(false)" title="Ctrl+S">Сохранить</button>
+    <button id="edSaveApply" class="primary" onclick="saveCfg(true)">Сохранить и применить</button>
+    <button onclick="closeEditor()">Закрыть</button></div>
+  <div class="db"><textarea id="edText" spellcheck="false"></textarea>
+    <div class="edbar"><div id="edStatus">Ctrl+S — сохранить</div>
+      <button id="edForce" hidden onclick="saveCfg(false, true)" title="Записать файл как есть, несмотря на ошибку проверки">Сохранить всё равно</button></div>
+  </div>
+</dialog>
+
+<div id="toasts"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+// значение как JS-строка внутри onclick="…": JSON-кавычки + HTML-экранирование (любые символы безопасны)
+const jsa = v => esc(JSON.stringify(String(v ?? "")));
+let S = null, U = null, busy = false;
+const installing = new Set();
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {...opts, headers: {"X-PP": "1", "Content-Type": "application/json", ...(opts.headers || {})}});
+  const t = await r.text(); let d; try { d = JSON.parse(t) } catch { d = t }
+  if (!r.ok) throw new Error((d && d.detail) || d || r.status);
+  return d;
+}
+function toast(msg, err = false) {
+  // модальный <dialog> рисуется поверх всей страницы — переносим тосты внутрь открытого окна, иначе их не видно
+  const box = $("#toasts"), host = document.querySelector("dialog[open]") || document.body;
+  if (box.parentElement !== host) host.append(box);
+  const el = document.createElement("div");
+  el.className = "toast" + (err ? " err" : ""); el.textContent = msg;
+  $("#toasts").append(el); setTimeout(() => el.remove(), err ? 10000 : 4000);
+}
+const fail = e => toast(e.message || String(e), true);
+
+function uptime(since) {
+  if (!since) return "—";
+  let s = Math.max(0, Math.floor(Date.now() / 1000 - since));
+  const d = Math.floor(s / 86400); s %= 86400;
+  const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60);
+  return d ? `${d}д ${h}ч` : h ? `${h}ч ${m}м` : `${m}м`;
+}
+function ago(ts) {
+  if (!ts) return "никогда";
+  const s = Math.floor(Date.now() / 1000 - ts);
+  if (s < 60) return "только что"; if (s < 3600) return `${Math.floor(s / 60)} мин назад`;
+  if (s < 86400) return `${Math.floor(s / 3600)} ч назад`; return `${Math.floor(s / 86400)} дн назад`;
+}
+const hhmm = ts => new Date(ts * 1000).toLocaleTimeString("ru-RU", {hour: "2-digit", minute: "2-digit", second: "2-digit"});
+const mb = n => n > 50000 ? (n / 1048576).toFixed(1) + " МБ" : "";
+function shortPath(p) {
+  const main = (U && U.paths && U.paths.main) || (S && S.paths && S.paths.main);
+  const home = (U && U.paths && U.paths.home) || "";
+  if (!p) return "";
+  if (home && p.startsWith(home + "/")) return "~" + p.slice(home.length);
+  return main && p.startsWith(main) ? "~/" + p.slice(main.lastIndexOf("/") + 1) : p;
+}
+
+function stateText(u) {
+  if (!u || !u.loaded) return ["", "не установлен — нажмите «Применить»"];
+  if (u.active === "activating" && u.sub === "auto-restart") return ["failed", "падает, перезапуск…"];
+  return [u.active, `${u.active}${u.sub && u.sub !== "running" && u.sub !== u.active ? " / " + u.sub : ""}`];
+}
+function healthHtml(h) {
+  const dash = '<span class="mute">—</span>';
+  if (!h || h.ok === null || h.ok === undefined) return [dash, dash, ""];
+  let rtt = h.ok ? `<span class="${h.rtt_ms > 1500 ? "warn" : "ok"}">${h.rtt_ms} ms</span>`
+                 : `<span class="bad" title="${esc(h.error)}">ошибка</span>`;
+  if (h.http_ok === false) rtt += ` <span class="bad" title="${esc(h.http_error || "")}">· HTTP не отвечает</span>`;
+  const ip = h.ip ? `${esc(h.ip)} ${esc(h.country || "")}` : dash;
+  return [rtt, ip, h.org ? esc(h.org) : ""];
+}
+
+function render() {
+  const b = [];
+  if (S.pending_apply) b.push(`<div class="banner pending"><span>Конфиг сохранён, но <b>не применён</b> — туннели работают по старому.
+    «Применить» создаст и перезапустит туннели по новому конфигу.</span><button class="primary" onclick="applyCfg()">Применить</button></div>`);
+  $("#applyBtn").classList.toggle("attn", !!S.pending_apply);
+  if (S.config_error) b.push(`<div class="banner">Ошибка конфига: ${esc(S.config_error)}</div>`);
+  else if (!S.systemd_ok) b.push(`<div class="banner warn">systemd --user недоступен: управление туннелями не работает.</div>`);
+  if (S.singbox && S.singbox.enabled && !S.singbox.installed)
+    b.push(`<div class="banner warn">sing-box не найден — установите его в разделе «Компоненты» ниже, затем «Применить».</div>`);
+  (S.warnings || []).forEach(w => b.push(`<div class="banner warn">${esc(w)}</div>`));
+  $("#banners").innerHTML = b.join("");
+
+  const sb = S.singbox || {};
+  if (sb.enabled) {
+    const [cls] = stateText(sb.unit); const [rtt, ip] = healthHtml(sb.health);
+    $("#entry").innerHTML = `<span class="dot ${cls}"></span><span>socks5/http ${esc(sb.listen)}:${sb.port}</span>
+      <span class="mute">→</span><span>${ip}</span><span>${rtt}</span>`;
+  } else {
+    const ts = S.tunnels || [], up = ts.filter(t => t.unit && t.unit.active === "active").length;
+    const bad = ts.filter(t => t.health && t.health.ok === false).length;
+    $("#entry").innerHTML = `<span class="dot ${bad ? "warn" : up ? "active" : ""}"></span><span>раздельный режим</span>
+      <span class="mute">·</span><span>${up}/${ts.length} работают${bad ? ` · <span class="bad">${bad} не отвечают</span>` : ""}</span>`;
+  }
+
+  const delays = S.delays || {};
+  if (!sb.enabled) $("#groups").innerHTML = `<div class="empty">Выключен — каждое приложение ходит в свой порт.
+    Чтобы получить единый вход <code>127.0.0.1:1080</code> с автовыбором самого быстрого туннеля, включите
+    <code>singbox.enabled: true</code> в «Конфиге» и опишите <code>groups</code> (группе можно дать свой <code>port</code>).</div>`;
+  else if (!S.groups) $("#groups").innerHTML = `<div class="empty">sing-box не отвечает по Clash API — он запущен? Проверьте карточку <b>singbox</b> ниже.</div>`;
+  else $("#groups").innerHTML = S.groups.map(g => {
+    const ro = g.type !== "Selector";
+    const chips = g.all.map(o => `<span class="chip ${o === g.now ? "now" : ""} ${ro ? "ro" : ""}"
+        ${ro ? "" : `onclick="selectOut(${jsa(g.name)},${jsa(o)})"`}>${esc(o)}${delays[o] ? ` <small>${delays[o]}ms</small>` : ""}</span>`).join("");
+    const gp = g.name === "select" ? sb.port : (sb.group_ports || {})[g.name];
+    return `<div class="group"><div class="gh"><b>${esc(g.name)}</b><span class="tag">${g.type === "URLTest" ? "auto · urltest" : "ручной выбор"}</span>
+      ${gp ? `<span class="tag">вход :${gp}</span>` : ""}
+      ${ro ? `<span class="mute">сейчас: ${esc(g.now)}</span>` : ""}</div><div class="chips">${chips}</div></div>`;
+  }).join("");
+
+  const cards = (S.tunnels || []).map(t => card(t.name, t));
+  if (sb.enabled) cards.push(card("singbox", {name: "singbox", kind: "комбинатор", description: "единый вход и группы поверх отдельных туннелей",
+    port: sb.port, socks: true, requires: [], chain: ["singbox"], unit: sb.unit, health: sb.health,
+    problems: sb.problems, looping: sb.looping}));
+  $("#tunnels").innerHTML = cards.join("") || `<div class="empty">Туннелей нет — откройте «Конфиг».</div>`;
+
+  renderApps();
+  renderEvents();
+}
+
+function chainHtml(t) {
+  if (!t.chain || t.chain.length < 2) return "";
+  return `<div class="chain"><span class="mute">путь:</span><span class="hop">ноутбук</span>` +
+    t.chain.map(h => `<span class="arr">→</span><span class="hop ${h === t.name ? "me" : ""} ${h === "wg-obfuscator" ? "obfs" : ""}">${esc(h)}</span>`).join("") +
+    `<span class="arr">→</span><span class="hop">интернет</span></div>`;
+}
+
+function copyUrl(btn, url) {
+  const old = btn.textContent;
+  navigator.clipboard.writeText(url).then(() => { btn.textContent = "✓"; setTimeout(() => btn.textContent = old, 1200); },
+    () => toast(url));
+}
+function urlsHtml(t) {
+  if (!t.url) return "";
+  const port = t.url.split(":").pop();
+  const row = (lbl, val, extra = "") => `<div class="url"><span class="lbl">${lbl}</span>
+    <span title="${esc(val)}">${esc(val.replace(/^(socks5|http):\/\//, ""))}</span>
+    ${extra}<button data-copy="${esc(val)}" onclick="copyUrl(this,this.dataset.copy)" title="Скопировать ${esc(val)}">копировать</button></div>`;
+  return `<div class="urls">${row("SOCKS", t.url,
+      `<a class="btn" href="tg://socks?server=127.0.0.1&port=${port}" title="Добавить этот прокси в Telegram">TG</a>`)}
+    ${t.http_url ? row("HTTP", t.http_url) : ""}
+    ${row("запуск", `pp-run ${t.name} `)}</div>`;
+}
+function bridgeHtml(t) {
+  const h = t.http; if (!h || h.mode !== "bridge") return "";
+  const [cls, st] = stateText(h.unit);
+  return `<div class="wrap" title="${esc(st)}"><span class="dot ${cls}"></span><span class="mute">HTTP-мост</span>
+    <span class="mono">:${h.port} → SOCKS :${t.port}</span>
+    <button onclick="openLogs(${jsa(t.name + "-http")})">логи</button></div>`;
+}
+function wrapHtml(t) {
+  const o = t.obfs; if (!o) return "";
+  const [cls, st] = stateText(o.unit);
+  return `<div class="wrap" title="${esc(st)}"><span class="dot ${cls}"></span><span class="mute">обёртка</span>
+    <span class="mono">wg-obfuscator :${o.port} → ${esc(o.target)} · ${esc(o.masking)}</span>
+    <button onclick="openLogs(${jsa(t.name + "-obfs")})">логи</button></div>`;
+}
+function probHtml(t) {
+  const out = [];
+  if (t.looping) out.push(`<b>падает в цикле</b>${t.looping.reason ? `<code>${esc(t.looping.reason)}</code>` : ""}`);
+  (t.problems || []).forEach(p => out.push(`<span>⚠ ${esc(p)}</span>`));
+  return out.length ? `<div class="prob">${out.join("")}</div>` : "";
+}
+function card(id, t) {
+  const u = t.unit; let [cls, st] = stateText(u);
+  if (t.problems && t.problems.length && !(u && u.active === "active")) { cls = "failed"; st = "не запущен — см. ниже"; }
+  const probes = t.socks || t.native;
+  const [rtt, ip, org] = probes ? healthHtml(t.health) : ['<span class="mute">не SOCKS</span>', "", ""];
+  const running = u && (u.active === "active" || u.active === "activating");
+  const enabled = u && u.enabled === "enabled";
+  const ctl = true;
+  const bad = (t.problems && t.problems.length) || t.looping;
+  return `<div class="card ${bad ? "bad" : ""}">
+    <div class="top"><span class="dot ${cls}"></span><span class="name">${esc(t.name)}</span>
+      ${t.kind ? `<span class="tag ${t.kind === "sing-box" ? "native" : ""}">${esc(t.kind)}${t.proto ? " · " + esc(t.proto) : ""}</span>` : ""}</div>
+    ${t.description ? `<div class="desc">${esc(t.description)}</div>` : ""}
+    ${probHtml(t)}
+    ${urlsHtml(t)}
+    ${chainHtml(t)}
+    <div class="kv">
+      <span>состояние</span><span>${esc(st)}</span>
+      ${t.port && !t.url ? `<span>порт</span><span>127.0.0.1:${t.port}</span>` : ""}
+      ${t.requires && t.requires.length ? `<span>зависит от</span><span>${t.requires.map(esc).join(", ")}</span>` : ""}
+      <span>задержка</span><span>${rtt}</span>
+      ${probes ? `<span>выход</span><span title="${org || ""}">${ip}</span>` : ""}
+      ${org ? `<span>сеть</span><span title="${org}">${org}</span>` : ""}
+      ${t.source ? `<span>источник</span><span title="${esc(t.source)}">${esc(t.source)}</span>` : ""}
+      ${t.config ? `<span>конфиг</span><span title="${esc(t.config)}">${esc(shortPath(t.config))}</span>` : ""}
+      ${(t.ports_from_file || []).length ? `<span>порты</span><span class="mute" title="не заданы в proxies.yaml — взяты из файла клиента">из файла клиента</span>` : ""}
+      ${ctl ? `<span>аптайм</span><span>${running && u.since ? uptime(u.since) : "—"}${u && u.restarts ? ` <span class="warn">· рестартов ${u.restarts}</span>` : ""}</span>` : ""}
+    </div>
+    ${wrapHtml(t)}${bridgeHtml(t)}
+    <div class="actions">
+      ${ctl ? (running ? `<button onclick="act(${jsa(id)},'stop')">■ Стоп</button>`
+        : u && u.loaded ? `<button onclick="act(${jsa(id)},'start')">▶ Старт</button>`
+        : `<button class="primary" onclick="act(${jsa(id)},'start')" title="Создать unit по конфигу и запустить">▶ Применить и запустить</button>`) : ""}
+      ${ctl ? `<button title="Перезапустить" onclick="act(${jsa(id)},'restart')">↻</button>` : ""}
+      ${probes ? `<button title="Проверить сейчас" onclick="check(${jsa(id)})">⟳</button>` : ""}
+      <button onclick="openLogs(${jsa(id)})">Логи</button>
+      ${ctl && u && u.loaded ? `<label class="switch" title="Запуск при загрузке"><input type="checkbox" ${enabled ? "checked" : ""}
+        onchange="act(${jsa(id)}, this.checked ? 'enable' : 'disable')"> автозапуск</label>` : ""}
+    </div></div>`;
+}
+
+function renderApps() {
+  const apps = S.apps || [], pr = S.pp_run || {};
+  const warn = pr.installed === false ? `<div class="banner warn">Нет ${esc(pr.path)} — переустановите панель (install.sh).</div>` : "";
+  if (!apps.length) {
+    $("#apps").innerHTML = warn + `<div class="empty">Запуск любой программы через туннель:
+      <code>pp-run ${esc((pr.targets || [])[0] || "de-wg")} telegram-desktop</code> ·
+      браузеры получают отдельный профиль на туннель, Telegram — прокси, Electron — <code>--proxy-server</code>,
+      остальные — переменные окружения; <code>pp-run -f …</code> — принудительно через proxychains.
+      Ярлыки в меню: секция <code>apps:</code> в «Конфиге», например
+      <code>telegram: { tunnel: de-wg, cmd: telegram-desktop }</code>.</div>`;
+    return;
+  }
+  $("#apps").innerHTML = warn + `<div class="tblwrap"><table class="apps"><thead><tr><th>Ярлык</th><th>Туннель</th><th>Команда</th><th></th></tr></thead><tbody>` +
+    apps.map(a => {
+      const t = (S.tunnels || []).find(x => x.name === a.tunnel);
+      const [cls] = t ? stateText(t.unit) : stateText(sb_unit());
+      const cmd = `pp-run ${a.mode === "proxychains" ? "-f " : ""}${a.tunnel} ${a.cmd}`;
+      return `<tr><td><b>${esc(a.title)}</b><small>${a.desktop ? "в меню приложений" : '<span class="warn">ярлык не создан — «Применить»</span>'}</small></td>
+        <td><span class="dot ${cls}"></span> <span class="mono">${esc(a.tunnel)}</span></td>
+        <td class="mono" style="font-size:12px">${esc(cmd)}</td>
+        <td><div class="acts"><button data-copy="${esc(cmd)}" onclick="copyUrl(this,this.dataset.copy)">копировать</button></div></td></tr>`;
+    }).join("") + `</tbody></table></div>`;
+}
+const sb_unit = () => (S.singbox || {}).unit;
+
+function renderEvents() {
+  const ev = S.events || [];
+  const n = S.notify || {};
+  $("#notifyMeta").innerHTML = n.available === false ? '<span class="warn">notify-send не найден: sudo apt install libnotify-bin</span>'
+    : n.last_error ? `<span class="warn">уведомления: ${esc(n.last_error)}</span>` : "";
+  $("#events").innerHTML = ev.length ? ev.map(e => `<div class="ev"><time>${hhmm(e.ts)}</time><span class="dot ${e.level}"></span>
+    <span class="src" title="${esc(e.source)}">${esc(e.source)}</span><span>${esc(e.msg)}</span></div>`).join("")
+    : `<div class="ev"><span class="mute" style="grid-column:1/-1">Событий пока нет</span></div>`;
+}
+
+function renderComps() {
+  if (!U) return;
+  const m = U.meta || {};
+  $("#compMeta").innerHTML = `в ${esc(shortPath(U.bin_dir))} · проверка: ${ago(m.checked_at)}${m.route ? " · " + esc(m.route) : ""}` +
+    (m.error ? ` · <span class="bad" title="${esc(m.error)}">ошибка</span>` : "");
+  const upd = U.components.filter(c => c.update).length;
+  $("#navComp").innerHTML = "Компоненты" + (upd ? `<span class="badge">${upd}</span>` : "");
+  $("#comps").innerHTML = U.components.map(c => {
+    const i = c.installed || {}, l = c.latest || {}, busyNow = installing.has(c.name) || U.busy;
+    const inst = i.path ? `<span class="mono">${esc(i.version || "?")}</span>
+        ${i.managed ? "" : ' <span class="tag" title="Установлен не панелью; новая версия встанет в ~/main/bin и будет использоваться вместо него">системный</span>'}
+        <small title="${esc(i.path)}">${esc(shortPath(i.path))}</small>` : '<span class="mute">не установлен</span>';
+    const lat = l.error ? `<span class="bad" title="${esc(l.error)}">ошибка проверки</span><small title="${esc(l.error)}">${esc(l.error)}</small>`
+      : l.version ? `<a class="mono" style="color:inherit" href="${esc(l.html_url)}" target="_blank" rel="noopener">${esc(l.version)}</a>
+          ${c.update ? ' <span class="tag" style="color:var(--acc)">новая</span>' : ""}
+          <small>${esc(l.asset || "")} ${mb(l.size)}</small>` : '<span class="mute">—</span>';
+    let btn = "";
+    if (busyNow) btn = `<button disabled>${installing.has(c.name) ? "устанавливаю…" : "занято…"}</button>`;
+    else if (!i.path) btn = `<button class="primary" onclick="install(${jsa(c.name)})">Установить</button>`;
+    else if (c.update) btn = `<button class="primary" onclick="install(${jsa(c.name)})">Обновить до ${esc(l.version)}</button>`;
+    else if (!i.managed) btn = `<button onclick="install(${jsa(c.name)})" title="Поставить в ~/main/bin">В ~/main/bin</button>`;
+    else btn = `<button onclick="install(${jsa(c.name)})" title="Скачать и поставить заново">Переустановить</button>`;
+    const rb = i.rollback && !busyNow ? `<button onclick="rollback(${jsa(c.name)})" title="Вернуть предыдущий бинарь (${esc(c.bin)}.old)">Откат</button>` : "";
+    return `<tr><td><b class="mono">${esc(c.name)}</b><small><a style="color:inherit" href="https://github.com/${esc(c.repo)}/releases" target="_blank" rel="noopener">${esc(c.repo)}</a></small></td>
+      <td>${inst}</td><td>${lat}</td>
+      <td class="mono" style="font-size:12px">${(c.used_by || []).map(u => esc(u.replace(/^pp-|\.service$/g, ""))).join(", ") || '<span class="mute">—</span>'}</td>
+      <td><div class="acts">${rb}${btn}</div></td></tr>`;
+  }).join("");
+}
+
+async function refresh() {
+  if (busy) return;
+  try { S = await api("/api/state"); render(); } catch (e) { console.warn(e); }
+}
+async function refreshComps() {
+  try { U = await api("/api/updates"); renderComps(); } catch (e) { console.warn(e); }
+}
+const ACT_RU = {start: "запущен", stop: "остановлен", restart: "перезапущен", enable: "автозапуск включён", disable: "автозапуск выключен"};
+async function act(name, action) {
+  try {
+    busy = true;
+    const r = await api(`/api/units/${name}/${action}`, {method: "POST"});
+    if (r.applied) toast("Конфиг применён\n" + reportText(r.applied));
+    toast(`${name}: ${ACT_RU[action] || action}`);
+  }
+  catch (e) { fail(e) } finally { busy = false; setTimeout(refresh, 400); setTimeout(refresh, 4000); }
+}
+async function check(name) {
+  try { await api(`/api/check/${name}`, {method: "POST"}); toast(`${name}: проверка…`); setTimeout(refresh, 4000); setTimeout(refresh, 10000); }
+  catch (e) { fail(e) }
+}
+const checkAll = () => check("all");
+async function selectOut(group, name) {
+  try { await api("/api/select", {method: "POST", body: JSON.stringify({group, name})}); toast(`${group} → ${name}`); refresh(); setTimeout(refresh, 4000); }
+  catch (e) { fail(e) }
+}
+function reportText(r) {
+  const p = [];
+  if (r.created.length) p.push("создано: " + r.created.join(", "));
+  if (r.restarted.length) p.push("перезапущено: " + r.restarted.join(", "));
+  if (r.removed.length) p.push("удалено: " + r.removed.join(", "));
+  if ((r.blocked || []).length) p.push("не запущены (см. карточки): " + r.blocked.join(", "));
+  return p.join("\n") || "изменений нет";
+}
+async function applyCfg(quiet = false) {
+  try {
+    busy = true; const r = await api("/api/apply", {method: "POST"});
+    if (!quiet) { toast("Применено\n" + reportText(r)); (r.warnings || []).forEach(w => toast(w, true)); }
+    return r;
+  } catch (e) { if (quiet) throw e; fail(e); }
+  finally { busy = false; refresh(); refreshComps(); setTimeout(refresh, 4000); }
+}
+
+// компоненты
+async function checkUpdates(btn) {
+  btn.disabled = true; btn.textContent = "проверяю…";
+  try { U = await api("/api/updates/check", {method: "POST"}); renderComps();
+        const n = U.components.filter(c => c.update).length;
+        toast(U.meta.error ? "Проверка с ошибками:\n" + U.meta.error : n ? `Доступно обновлений: ${n}` : "Всё актуально", !!U.meta.error); }
+  catch (e) { fail(e) } finally { btn.disabled = false; btn.textContent = "Проверить обновления"; }
+}
+async function install(name) {
+  installing.add(name); renderComps();
+  try {
+    const r = await api(`/api/updates/${name}/install`, {method: "POST"});
+    toast(`${name} ${r.version} установлен` + (r.verified ? " · sha256 ✓" : "") + (r.restarted.length ? `\nперезапущено: ${r.restarted.join(", ")}` : ""));
+    (r.warnings || []).forEach(w => toast(w, true));
+  } catch (e) { fail(e) } finally { installing.delete(name); refreshComps(); refresh(); }
+}
+async function rollback(name) {
+  if (!confirm(`Вернуть предыдущую версию ${name}?`)) return;
+  try { const r = await api(`/api/updates/${name}/rollback`, {method: "POST"}); toast(`${name}: откат на ${r.version || "предыдущую версию"}`); }
+  catch (e) { fail(e) } finally { refreshComps(); refresh(); }
+}
+async function testNotify() {
+  try { await api("/api/notify/test", {method: "POST"}); toast("Уведомление отправлено"); }
+  catch (e) { fail(e) } finally { refresh(); }
+}
+
+// логи
+let ws = null;
+function openLogs(name) {
+  $("#logName").textContent = name; const body = $("#logBody"); body.textContent = "";
+  $("#logDlg").showModal();
+  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/logs/${name}/ws`);
+  ws.onmessage = ev => {
+    body.append(ev.data + "\n");
+    if (body.textContent.length > 400000) body.textContent = body.textContent.slice(-300000);
+    if ($("#logFollow").checked) body.scrollTop = body.scrollHeight;
+  };
+  ws.onclose = () => body.append("\n— поток закрыт —\n");
+}
+function closeLogs() { if (ws) ws.close(); ws = null; $("#logDlg").close(); }
+$("#logDlg").addEventListener("close", () => { if (ws) ws.close(); ws = null; });
+
+// редактор
+let edSaved = "";              // текст, совпадающий с файлом на диске
+const edDirty = () => $("#edText").value !== edSaved;
+function edStatus(msg, cls = "") {
+  const el = $("#edStatus"); el.className = cls; el.textContent = msg;
+}
+function edMark() { $("#edDirty").hidden = !edDirty(); }
+function edBusy(on) { ["#edSave", "#edSaveApply", "#edForce"].forEach(id => $(id).disabled = on); }
+const now = () => new Date().toLocaleTimeString("ru-RU");
+
+async function openEditor() {
+  try {
+    const c = await api("/api/config");
+    $("#edText").value = edSaved = c.text; $("#edPath").textContent = c.path;
+    $("#edForce").hidden = true; edStatus("Ctrl+S — сохранить"); edMark();
+    $("#edDlg").showModal(); $("#edText").focus();
+  } catch (e) { fail(e) }
+}
+function closeEditor() {
+  if (edDirty() && !confirm("Есть несохранённые изменения. Закрыть без сохранения?")) return;
+  $("#edDlg").close();
+}
+$("#edDlg").addEventListener("cancel", e => {   // Esc
+  if (edDirty() && !confirm("Есть несохранённые изменения. Закрыть без сохранения?")) e.preventDefault();
+});
+$("#edDlg").addEventListener("close", () => { const b = $("#toasts"); if (b.parentElement !== document.body) document.body.append(b); });
+$("#edText").addEventListener("input", edMark);
+
+function edGoto(msg) {  // «line 179, column 1» из ошибки YAML → курсор на эту строку
+  const m = msg.match(/line (\d+)/); if (!m) return;
+  const ta = $("#edText"), lines = ta.value.split("\n"), n = Math.min(+m[1], lines.length);
+  const start = lines.slice(0, n - 1).reduce((a, l) => a + l.length + 1, 0);
+  ta.focus(); ta.setSelectionRange(start, start + (lines[n - 1] || "").length);
+  ta.scrollTop = Math.max(0, (n - 5) * parseFloat(getComputedStyle(ta).lineHeight || "19"));
+}
+async function saveCfg(andApply, force = false) {
+  const text = $("#edText").value;
+  edBusy(true); edStatus("сохраняю…", "busy");
+  let r;
+  try {
+    r = await api("/api/config", {method: "PUT", body: JSON.stringify({text, force})});
+  } catch (e) {
+    edBusy(false);
+    edStatus("НЕ сохранено — ошибка в конфиге:\n" + (e.message || e) +
+             "\n\nИсправьте и сохраните снова, или «Сохранить всё равно» (панель покажет ошибку, пока её не исправите).", "err");
+    $("#edForce").hidden = false;
+    edGoto(String(e.message || ""));
+    return;
+  }
+  edSaved = text; edMark(); $("#edForce").hidden = true;
+  const warn = (r.warnings || []).join("\n");
+  if (r.error) {
+    edBusy(false);
+    edStatus(`Сохранено в ${now()}, но с ошибкой — до исправления туннели не будут применены:\n${r.error}`, "warn");
+    refresh(); return;
+  }
+  if (!andApply) {
+    edBusy(false);
+    edStatus(`✓ Сохранено в ${now()}${r.changed ? "" : " (изменений не было)"}` +
+             (r.pending_apply ? "\nЧтобы изменения заработали — «Сохранить и применить» (или «Применить» на странице)." : "") +
+             (warn ? "\n" + warn : ""), warn ? "warn" : "ok");
+    refresh(); return;
+  }
+  edStatus(`✓ Сохранено в ${now()}. Применяю…`, "busy");
+  try {
+    const a = await applyCfg(true);
+    const msg = `✓ Сохранено и применено в ${now()}\n${reportText(a)}`;
+    const warns = (a.warnings || []).filter(w => !/Failed to connect to bus|does not exist/.test(w));
+    if (warns.length) { edBusy(false); edStatus(msg + "\n\n" + warns.join("\n"), "warn"); return; }  // окно не закрываем — видно, что не так
+    edBusy(false); $("#edDlg").close(); toast(msg);
+  } catch (e) {
+    edBusy(false);
+    edStatus(`✓ Сохранено, но НЕ применено:\n${e.message || e}`, "err");
+  }
+}
+$("#edText").addEventListener("keydown", e => {
+  if (e.key === "Tab") { e.preventDefault(); const t = e.target, s = t.selectionStart;
+    t.setRangeText("  ", s, t.selectionEnd, "end"); edMark(); }
+  // e.code, а не e.key: Ctrl+S работает и в русской раскладке
+  if ((e.ctrlKey || e.metaKey) && e.code === "KeyS") { e.preventDefault(); saveCfg(false); }
+});
+window.addEventListener("beforeunload", e => { if ($("#edDlg").open && edDirty()) { e.preventDefault(); e.returnValue = ""; } });
+
+refresh(); refreshComps();
+setInterval(refresh, 3000); setInterval(refreshComps, 15000);
+</script>
+</body>
+</html>

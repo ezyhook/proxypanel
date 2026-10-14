@@ -1,0 +1,193 @@
+# ProxyPanel — описание туннелей.  Файл: ~/main/.config/proxypanel/proxies.yaml
+# После правки: «Применить» в панели, либо
+#   ~/main/.local/share/proxypanel/venv/bin/python ~/main/.local/share/proxypanel/app.py apply
+#
+# Все туннели примера выключены (autostart: false): впишите свои серверы и ключи,
+# уберите autostart: false и нажмите «Применить».
+#
+# Основной режим — РАЗДЕЛЬНЫЙ: каждый туннель — свой процесс и свой SOCKS-порт,
+# каждое приложение ходит в свой порт. Комбинатор с автовыбором — опция (singbox ниже).
+#
+# Виды туннелей (kind)
+#   ssh, hysteria2, wireproxy, wg-obfuscator … — внешний процесс:
+#       cmd        команда запуска (на переднем плане, без демонизации!)
+#       config     файл клиента (путь от ~/main/.config/proxypanel). Панель кладёт его копию
+#                  в run/ с подстановками и сама выставляет порты: wireproxy → [Socks5]/[http]
+#                  BindAddress, hysteria → socks5.listen/http.listen. С config cmd не нужен.
+#   sing-box — три варианта на выбор:
+#       outbound:/endpoint:   прямо здесь, в YAML (vless, trojan, ss, hysteria2, tuic, wireguard…)
+#       config: x.json        тот же outbound/endpoint, но из JSON-файла (объект с полем type)
+#       config: full.json     полный конфиг sing-box — запускается как есть, панель только
+#                             ставит вход на port (и http_port), а при via — detour
+#     В первых двух панель сама собирает отдельный процесс sing-box: работают via, obfuscator.
+#
+# Порты — одно место правды:
+#       port       SOCKS5-порт; http_port — ещё и HTTP-прокси (ssh и т.п. — через мост HTTP→SOCKS)
+#       Если port/http_port не указаны здесь, берутся из файла клиента (BindAddress, listen,
+#       inbound). Если указаны и тут, и в файле — главный этот файл, в копии будет подставлен он.
+#   Прочее: socks: false (не SOCKS), requires, env, autostart, restart_sec, description
+#
+# WireGuard в native-туннеле: поля sing-box (private_key, peers: public_key, pre_shared_key,
+# allowed_ips, persistent_keepalive_interval). Можно писать и как в wg-quick — PrivateKey,
+# PublicKey, PresharedKey, Endpoint: host:port, AllowedIPs: "0.0.0.0/0, ::/0" — панель переведёт.
+#
+# Обёртка wg-obfuscator (obfuscator:) — для WireGuard-туннелей (wireproxy с config или
+# native endpoint wireguard). Панель поднимает обфускатор отдельным процессом,
+# направляет на него Endpoint, а реальный сервер отдаёт обфускатору. Параметры:
+#   key (обяз.), target (по умолчанию — Endpoint/peer из конфига), masking: STUN|AUTO|NONE,
+#   in-timeout, resolve-interval, max-dummy, idle-timeout, listen_port (по умолчанию с 52000)
+#
+# Цепочки (via): через какой туннель ходить. ssh/autossh — автоматически (ProxyCommand),
+# native — через detour, остальные — подстановками {via} {via_url} {via_host} {via_port}.
+#
+# Подстановки в cmd и config: {port} {http_port} {name} {config} {obfs} {via...}
+#   {confdir}=~/main/.config/proxypanel {bin}=~/main/bin {main}=~/main {home}
+
+panel:
+  listen: 127.0.0.1
+  port: 8800
+
+tunnels:
+  vps1-ssh:
+    kind: ssh
+    description: SSH -D через vps1
+    port: 1081
+    autostart: false           # включите, когда впишете свои сервер/ключи
+    http_port: 1181            # ssh не умеет HTTP — панель поднимет мост HTTP→SOCKS
+    env: { AUTOSSH_GATETIME: "0" }
+    # нужен ключ без пароля (или ssh-agent, доступный user-сервисам)
+    cmd: >-
+      autossh -M 0 -N -D 127.0.0.1:{port}
+      -o ServerAliveInterval=15 -o ServerAliveCountMax=3
+      -o ExitOnForwardFailure=yes -o BatchMode=yes
+      user@vps1.example.com
+
+  # Цепочка: второй ssh ходит до vps2 через первый (ProxyCommand подставится сам).
+  vps2-ssh:
+    kind: ssh
+    description: vps2, доступ через vps1
+    port: 1086
+    via: vps1-ssh
+    autostart: false
+    cmd: >-
+      autossh -M 0 -N -D 127.0.0.1:{port}
+      -o ServerAliveInterval=15 -o ExitOnForwardFailure=yes -o BatchMode=yes
+      user@vps2.example.com
+
+  nl-hy2:
+    kind: hysteria2
+    description: Hysteria2, Нидерланды
+    port: 1082
+    autostart: false           # включите, когда впишете свои сервер/ключи
+    http_port: 1182            # hysteria сама: http.listen
+    config: hy2-nl.yaml          # cmd не нужен: hysteria client -c {config}
+
+  # wireproxy в обёртке wg-obfuscator. Конфиг wireproxy обычный, с реальным Endpoint —
+  # панель сама вставит обфускатор между wireproxy и сервером.
+  de-wg:
+    kind: wireproxy
+    description: WireGuard → SOCKS, Германия, через wg-obfuscator
+    port: 1083
+    autostart: false           # включите, когда впишете свои сервер/ключи
+    http_port: 1183            # wireproxy сам: [http] BindAddress
+    config: wireproxy-de.conf
+    obfuscator:
+      key: CHANGE_ME              # тот же ключ, что у обфускатора на сервере
+      masking: STUN
+      in-timeout: 60              # пересоздать UDP-сессию, если сервер замолчал
+
+  # То же самое, но WireGuard силами sing-box (отдельный процесс sing-box).
+  de-wg-sb:
+    kind: sing-box
+    description: sing-box WireGuard + wg-obfuscator
+    port: 1084
+    autostart: false
+    obfuscator: { key: CHANGE_ME, masking: STUN }
+    endpoint:
+      type: wireguard
+      address: [10.66.0.3/32]
+      private_key: OORBKvlkP9NvecxSt5aSN8Uf1At+1XoxZodYvMHoiVI=   # замените
+      mtu: 1380
+      peers:
+        - address: vps-de.example.com   # реальный сервер — станет target обфускатора
+          port: 19999
+          public_key: hzqUmbOnlVYjTHdSrYI6PQ1mvZupFGrUyzLsKAdx73U=
+          # pre_shared_key: <wg genpsk>      # если на сервере для пира задан PresharedKey
+          allowed_ips: [0.0.0.0/0]
+          persistent_keepalive_interval: 25
+
+  # Native-туннель с цепочкой: VLESS Reality до Финляндии, коннект к серверу — через vps1-ssh.
+  fi-vless:
+    kind: sing-box
+    description: VLESS Reality через vps1
+    port: 1085
+    via: vps1-ssh
+    autostart: false
+    outbound:
+      type: vless
+      server: fi.example.com
+      server_port: 443
+      uuid: 00000000-0000-0000-0000-000000000000
+      flow: xtls-rprx-vision
+      tls:
+        enabled: true
+        server_name: www.microsoft.com
+        utls: { enabled: true, fingerprint: chrome }
+        reality: { enabled: true, public_key: jNXHt1yRo0vDuchQlIP6Z0ZvjT3KtzVI-T4E7RoLJS0, short_id: "0123456789abcdef" }
+
+  # sing-box из JSON-файла: один outbound (как в примере fi-vless, только в sb-nl.json).
+  # Полный конфиг sing-box тоже подходит — тогда панель поправит в нём только порт входа.
+  nl-sb:
+    kind: sing-box
+    description: VLESS из JSON-файла
+    port: 1087
+    autostart: false
+    config: sb-nl.json
+
+# ── Ярлыки в меню приложений: программа через свой туннель (запуск через pp-run) ──
+# Браузеры получают отдельный профиль на туннель (~/main/profiles), Telegram — прокси,
+# Electron-программы — --proxy-server, остальные — переменные окружения.
+# mode: proxychains — принудительно, для программ, игнорирующих прокси.
+apps: {}
+# apps:
+#   telegram:  { tunnel: de-wg, cmd: telegram-desktop }
+#   chrome-nl: { tunnel: nl-hy2, cmd: google-chrome, title: "Chrome · Нидерланды" }
+#   firefox:   { tunnel: vps1-ssh, cmd: firefox }
+#   old-app:   { tunnel: vps1-ssh, cmd: some-app, mode: proxychains }
+
+# ── Опция: комбинатор sing-box — единый вход с автовыбором поверх тех же портов ──
+singbox:
+  enabled: false
+  port: 1080                 # единый вход (socks5 + http); выбор — в панели
+  default: auto
+  # rules:                   # маршрутизация по доменам для единого входа
+  #   - { domain_suffix: [".ru", ".рф"], outbound: direct }
+groups:
+  auto:
+    type: urltest            # самый быстрый живой
+    port: 1090               # свой вход прямо в группу (необязательно)
+    members: [vps1-ssh, nl-hy2, de-wg]
+
+health:
+  interval: 30
+  ip_interval: 300
+  timeout: 8
+
+notify:
+  enabled: true
+  on_crash: true
+  on_down: true
+  on_recover: true
+  on_update: true
+  on_ip_change: false
+  fail_threshold: 2
+  cooldown: 300
+
+updates:                     # бинарники в ~/main/bin
+  enabled: true
+  check_interval_h: 12
+  auto_install: false
+  proxy: auto                # auto: напрямую, при ошибке — через ваши туннели; direct; socks5h://127.0.0.1:1082
+  prerelease: false
+  github_token: ""
+  disabled: []

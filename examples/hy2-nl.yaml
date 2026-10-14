@@ -1,0 +1,6 @@
+# Пример конфига клиента Hysteria 2 (замените сервер и пароль).
+# socks5.listen / http.listen не нужны: панель выставит их по port / http_port из proxies.yaml.
+server: hy2-nl.example.com:443
+auth: CHANGE_ME
+tls:
+  sni: hy2-nl.example.com

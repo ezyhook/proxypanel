@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# pp-run — запустить программу через туннель ProxyPanel.
+#
+#   pp-run de-wg telegram-desktop      Telegram через de-wg
+#   pp-run nl-hy2 google-chrome        Chrome с отдельным профилем через nl-hy2
+#   pp-run vps1-ssh curl ifconfig.co   любая консольная программа
+#   pp-run de-wg                       оболочка, где весь трафик программ идёт через de-wg
+#   pp-run -f de-wg some-app           принудительно через proxychains4
+#   pp-run -l                          список туннелей
+#
+# Порты берутся из ~/main/.config/proxypanel/run/env/<туннель>.env (их пишет панель при «Применить»).
+set -euo pipefail
+
+MAIN="${PP_MAIN:-$HOME/main}"
+RUN="$MAIN/.config/proxypanel/run"
+ENVDIR="$RUN/env"
+PCHAINS="$RUN/proxychains"
+# Профили браузеров — в НЕскрытом каталоге: snap-версии Firefox/Chromium не видят ~/.что-то
+PROFILES="${PP_PROFILES:-$MAIN/profiles}"
+
+c_dim=$'\e[2m'; c_red=$'\e[31m'; c_grn=$'\e[32m'; c_yel=$'\e[33m'; c_off=$'\e[0m'
+[[ -t 2 ]] || { c_dim=; c_red=; c_grn=; c_yel=; c_off=; }
+log()  { ((quiet)) || printf '%spp-run:%s %s\n' "$c_dim" "$c_off" "$*" >&2; }
+warn() { printf '%spp-run:%s %s\n' "$c_yel" "$c_off" "$*" >&2; }
+die()  { printf '%spp-run:%s %s\n' "$c_red" "$c_off" "$*" >&2; exit 1; }
+
+usage() {
+  sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+  cat <<'EOF'
+
+Флаги:
+  -f, --force           через proxychains4 (для программ, которые игнорируют прокси;
+                        не работает со статически собранными, например Go-программами)
+  -e, --env             только переменные окружения, без особой обработки браузеров/Telegram
+      --shared-profile  браузер со своим обычным профилем (флаги прокси сработают,
+                        только если браузер ещё не запущен)
+      --no-start        не запускать туннель, если он остановлен
+  -q, --quiet           без сообщений
+  -l, --list            список туннелей и портов
+EOF
+}
+
+list() {
+  shopt -s nullglob
+  local files=("$ENVDIR"/*.env)
+  ((${#files[@]})) || die "нет туннелей в $ENVDIR — нажмите «Применить» в панели"
+  echo "ТУННЕЛЬ          SOCKS    HTTP     СОСТОЯНИЕ"
+  for f in "${files[@]}"; do
+    (
+      # shellcheck disable=SC1090
+      source "$f"
+      st=$(systemctl --user is-active "$PP_UNIT" 2>/dev/null || true)
+      [[ "$st" == active ]] && st="${c_grn}active${c_off}" || st="${c_dim}${st:-?}${c_off}"
+      printf '%-16s %-8s %-8s %s  %s%s%s\n' "$PP_NAME" "$PP_SOCKS_PORT" "${PP_HTTP_PORT:--}" "$st" "$c_dim" "$PP_TITLE" "$c_off"
+    )
+  done
+}
+
+port_open() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+force=0; envonly=0; shared=0; start=1; quiet=0
+while (($#)); do
+  case "$1" in
+    -f|--force) force=1; shift ;;
+    -e|--env) envonly=1; shift ;;
+    --shared-profile) shared=1; shift ;;
+    --no-start) start=0; shift ;;
+    -q|--quiet) quiet=1; shift ;;
+    -l|--list) list; exit 0 ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    -*) die "неизвестный флаг $1 (pp-run --help)" ;;
+    *) break ;;
+  esac
+done
+(($#)) || { usage; exit 2; }
+
+name="$1"; shift
+[[ "$name" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "недопустимое имя туннеля: $name"
+envf="$ENVDIR/$name.env"
+if [[ ! -f "$envf" ]]; then
+  avail=$(cd "$ENVDIR" 2>/dev/null && ls -- *.env 2>/dev/null | sed 's/\.env$//' | tr '\n' ' ')
+  die "нет туннеля «$name». Доступны: ${avail:-нет — нажмите «Применить» в панели}"
+fi
+# shellcheck disable=SC1090
+source "$envf"
+
+# ── туннель должен работать ──
+if ! port_open "$PP_SOCKS_PORT"; then
+  if ((start)) && command -v systemctl >/dev/null; then
+    log "туннель $name не запущен — запускаю $PP_UNIT"
+    systemctl --user start "$PP_UNIT" || die "не удалось запустить $PP_UNIT (journalctl --user -u $PP_UNIT)"
+    for _ in $(seq 1 75); do port_open "$PP_SOCKS_PORT" && break; sleep 0.2; done
+    port_open "$PP_SOCKS_PORT" || die "туннель $name не открыл порт $PP_SOCKS_PORT за 15 с"
+  else
+    warn "туннель $name не отвечает на 127.0.0.1:$PP_SOCKS_PORT — программа останется без сети"
+  fi
+fi
+
+SOCKS="socks5h://127.0.0.1:$PP_SOCKS_PORT"
+HTTPP="${PP_HTTP_PORT:+http://127.0.0.1:$PP_HTTP_PORT}"
+export ALL_PROXY="$SOCKS" all_proxy="$SOCKS"
+# HTTP_PROXY: настоящий HTTP-прокси, если он есть; иначе socks5h (понимают curl, git, Go-программы, pip)
+export HTTP_PROXY="${HTTPP:-$SOCKS}" http_proxy="${HTTPP:-$SOCKS}"
+export HTTPS_PROXY="${HTTPP:-$SOCKS}" https_proxy="${HTTPP:-$SOCKS}"
+export NO_PROXY="localhost,127.0.0.1,::1" no_proxy="localhost,127.0.0.1,::1"
+export PP_TUNNEL="$name"
+
+# ── без команды: оболочка через туннель ──
+if (($# == 0)); then
+  log "оболочка через $name ($SOCKS${HTTPP:+, $HTTPP}). Выход — exit."
+  exec "${SHELL:-/bin/bash}" -i
+fi
+
+if ((force)); then
+  pc=$(command -v proxychains4 || command -v proxychains || true)
+  [[ -n "$pc" ]] || die "нет proxychains4: sudo apt install proxychains4"
+  log "$1 через proxychains → $name"
+  exec "$pc" -q -f "$PCHAINS/$name.conf" "$@"
+fi
+
+prog=$(basename -- "$1")
+if ((envonly)); then prog="__env__"; fi
+
+chromium_flags=(--proxy-server="socks5://127.0.0.1:$PP_SOCKS_PORT"
+                # DNS тоже через прокси, а не мимо него
+                --host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE localhost")
+
+case "$prog" in
+  google-chrome*|chromium*|brave*|vivaldi*|microsoft-edge*|opera*|yandex-browser*|thorium*)
+    if ((shared)); then
+      warn "общий профиль: если $prog уже открыт, прокси НЕ применится (окно откроется в старом процессе)"
+      exec "$1" "${chromium_flags[@]}" "${@:2}"
+    fi
+    dir="$PROFILES/$prog-$name"; mkdir -p "$dir"
+    log "$prog через $name, профиль $dir"
+    exec "$1" "${chromium_flags[@]}" --user-data-dir="$dir" "${@:2}"
+    ;;
+  firefox*|librewolf*|waterfox*|floorp*)
+    ((shared)) && die "Firefox не принимает прокси из командной строки — нужен отдельный профиль (уберите --shared-profile)"
+    dir="$PROFILES/$prog-$name"; mkdir -p "$dir"
+    cat > "$dir/user.js" <<EOF
+// Сгенерировано pp-run: Firefox через туннель $name
+user_pref("network.proxy.type", 1);
+user_pref("network.proxy.socks", "127.0.0.1");
+user_pref("network.proxy.socks_port", $PP_SOCKS_PORT);
+user_pref("network.proxy.socks_version", 5);
+user_pref("network.proxy.socks_remote_dns", true);
+user_pref("network.proxy.share_proxy_settings", false);
+user_pref("network.proxy.no_proxies_on", "localhost, 127.0.0.1");
+user_pref("media.peerconnection.ice.proxy_only_if_behind_proxy", true);
+user_pref("browser.shell.checkDefaultBrowser", false);
+EOF
+    log "$prog через $name, профиль $dir"
+    exec "$1" --no-remote --profile "$dir" "${@:2}"
+    ;;
+  telegram-desktop|Telegram|telegram|org.telegram.desktop)
+    # Telegram сам предложит включить SOCKS5-прокси туннеля (один раз подтвердить)
+    log "Telegram: прокси 127.0.0.1:$PP_SOCKS_PORT ($name) — подтвердите в окне Telegram"
+    args=("${@:2}")
+    # если ярлык передал свои аргументы (%U), не дублируем «--»
+    for a in "${args[@]}"; do [[ "$a" == "--" ]] && exec "$1" "${args[@]}"; done
+    exec "$1" "${args[@]}" -- "tg://socks?server=127.0.0.1&port=$PP_SOCKS_PORT"
+    ;;
+  code|code-insiders|codium|cursor|discord|slack|obsidian|signal-desktop|element-desktop|spotify|notion-app|teams-for-linux|zoom-electron)
+    log "$prog (Electron) через $name — если программа уже открыта, сначала закройте её"
+    exec "$1" "${chromium_flags[@]}" "${@:2}"
+    ;;
+  *)
+    log "$prog через $name (переменные окружения${HTTPP:+, http $HTTPP})"
+    exec "$@"
+    ;;
+esac

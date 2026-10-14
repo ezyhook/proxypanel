@@ -1,0 +1,48 @@
+[project]
+name = "proxypanel"
+version = "0.9.0"
+description = "Локальная веб-панель для SOCKS/HTTP-туннелей на Linux: ssh, hysteria2, wireproxy, sing-box, wg-obfuscator"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "httpx[socks]>=0.27",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+# Приложение — один файл app.py рядом со static/; ставится install.sh, а не pip.
+# pyproject нужен для зависимостей, ruff и pytest.
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["static"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM", "ASYNC", "S", "RUF"]
+ignore = [
+    "S101",    # assert в тестах и как type-guard
+    "S104",    # bind 0.0.0.0 — у нас только loopback, проверяется в коде
+    "S108",    # /tmp в тестах
+    "S310",    # urllib в тестах
+    "S603", "S607",  # subprocess с фиксированными аргументами — так и задумано
+    "S324",
+    "B008",    # Body(...) в сигнатуре — идиома FastAPI
+    "RUF001", "RUF002", "RUF003",  # кириллица и типографика в строках/комментариях
+    "SIM105",
+    "ASYNC109", "ASYNC110", "ASYNC221", "ASYNC230", "ASYNC240",
+    "UP017",
+    "RUF005",  # [a] + b читается не хуже [*a, b]
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "B011", "E501"]  # длинные YAML-строки в тестах читаются лучше целиком
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

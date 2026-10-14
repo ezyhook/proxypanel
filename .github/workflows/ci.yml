@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: ruff
+        run: ruff check .
+      - name: pytest
+        run: pytest
+
+  shell-and-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -S warning install.sh uninstall.sh pp-run
+      - name: bash -n
+        run: for f in install.sh uninstall.sh pp-run; do bash -n "$f"; done
+      - name: JS в static/index.html парсится
+        run: |
+          python3 - <<'EOF'
+          s = open("static/index.html", encoding="utf-8").read()
+          open("/tmp/ui.js", "w", encoding="utf-8").write(s[s.index("<script>") + 8:s.rindex("</script>")])
+          EOF
+          node --check /tmp/ui.js
+      - name: пример конфига проходит проверку
+        run: |
+          pip install -r requirements.txt
+          mkdir -p /tmp/pp/main/.config/proxypanel
+          cp proxies.example.yaml /tmp/pp/main/.config/proxypanel/proxies.yaml
+          cp examples/* /tmp/pp/main/.config/proxypanel/
+          PP_MAIN=/tmp/pp/main python3 -c "import app; c = app.load_config(); print(len(c['tunnels']), 'туннелей, предупреждений:', len(c['_warnings']))"
