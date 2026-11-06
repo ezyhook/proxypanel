@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ProxyPanel</title>
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
 <style>
 :root{
   --bg:#0f1115;--panel:#171a21;--panel2:#1e222b;--line:#2a2f3a;--text:#e6e8ee;--mute:#8b93a5;
@@ -17,7 +18,8 @@
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 header{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line);
   display:flex;gap:14px;align-items:center;padding:10px 20px;flex-wrap:wrap}
-h1{font-size:16px;margin:0;letter-spacing:.3px}
+h1{font-size:16px;margin:0;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+h1 img{width:22px;height:22px;display:block}
 h2{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--mute);margin:26px 0 10px;
   display:flex;align-items:center;gap:10px}
 h2 .sub{text-transform:none;letter-spacing:0;font-weight:400;font-size:12.5px}
@@ -151,7 +153,7 @@ a.btn:hover{border-color:var(--acc)}
 </head>
 <body>
 <header>
-  <h1>ProxyPanel</h1>
+  <h1><img src="/logo.svg" alt="">ProxyPanel</h1>
   <div class="entry" id="entry"><span class="dot"></span><span>…</span></div>
   <nav>
     <a href="#s-tun">Туннели</a><a href="#s-apps">Приложения</a><a href="#s-out">Комбинатор</a><a href="#s-comp" id="navComp">Компоненты</a><a href="#s-ev">События</a>

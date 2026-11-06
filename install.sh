@@ -54,6 +54,7 @@ chmod 700 "$CONF_DIR"   # здесь будут ключи WireGuard и паро
 echo "==> Приложение → $APP_DIR"
 install -m 0644 "$SRC/app.py" "$APP_DIR/app.py"
 install -m 0644 "$SRC/static/index.html" "$APP_DIR/static/index.html"
+install -m 0644 "$SRC/static/logo.svg" "$APP_DIR/static/logo.svg"
 install -m 0644 "$SRC/requirements.txt" "$APP_DIR/requirements.txt"
 
 echo "==> pp-run → $BIN_DIR/pp-run (+ ссылка в ~/.local/bin, чтобы работал в терминале)"

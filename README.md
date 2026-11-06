@@ -1,3 +1,5 @@
+<p align="center"><img src="static/logo.svg" width="112" alt="ProxyPanel"></p>
+
 # ProxyPanel
 
 Локальная веб-панель для SOCKS/HTTP-туннелей на Linux: **ssh, hysteria2, wireproxy, AmneziaWG,

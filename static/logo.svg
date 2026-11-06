@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ProxyPanel">
+  <defs>
+    <linearGradient id="pp-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1c2b4d"/>
+      <stop offset="1" stop-color="#0b1020"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#pp-bg)"/>
+  <g fill="none" stroke-width="30" stroke-linecap="round">
+    <path d="M150 256 C 246 256, 246 140, 340 140" stroke="#6ea8fe"/>
+    <path d="M150 256 H 340" stroke="#3fb950"/>
+    <path d="M150 256 C 246 256, 246 372, 340 372" stroke="#6ea8fe"/>
+  </g>
+  <circle cx="140" cy="256" r="56" fill="#e6e8ee"/>
+  <circle cx="140" cy="256" r="24" fill="#0b1020"/>
+  <g>
+    <rect x="322" y="106" width="96" height="68" rx="18" fill="#6ea8fe"/>
+    <rect x="322" y="222" width="96" height="68" rx="18" fill="#3fb950"/>
+    <rect x="322" y="338" width="96" height="68" rx="18" fill="#6ea8fe"/>
+  </g>
+  <g fill="#0b1020">
+    <rect x="352" y="130" width="42" height="20" rx="6"/>
+    <rect x="352" y="246" width="42" height="20" rx="6"/>
+    <rect x="352" y="362" width="42" height="20" rx="6"/>
+  </g>
+</svg>

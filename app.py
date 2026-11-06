@@ -2336,6 +2336,12 @@ async def index():
     return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/logo.svg")
+async def logo():
+    return FileResponse(STATIC_DIR / "logo.svg", media_type="image/svg+xml",
+                        headers={"Cache-Control": "max-age=86400"})
+
+
 def _known(cfg: dict, name: str, for_logs: bool = False) -> str:
     if name == "singbox" and cfg["singbox"]["enabled"]:
         return SINGBOX_UNIT

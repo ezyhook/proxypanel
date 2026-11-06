@@ -116,3 +116,10 @@ def test_obfs_auto_port_skips_combiner_ports(app, write):
     cfg = app.parse_config("singbox: {enabled: true, port: 1080, clash_api_port: 52000}\n"
                            "tunnels:\n  w: {kind: wireproxy, port: 1083, config: wp.conf, obfuscator: {key: k}}\n")
     assert cfg["tunnels"]["w"]["_obfs_port"] == 52001
+
+
+def test_logo_served(client):
+    r = client.get("/logo.svg")  # favicon и шапка: без X-PP, как и сама страница
+    assert r.status_code == 200 and r.headers["content-type"].startswith("image/svg+xml")
+    assert r.text.lstrip().startswith("<svg")
+    assert client.get("/logo.svg", headers={"Host": "evil.example"}).status_code == 403
