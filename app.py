@@ -160,6 +160,7 @@ DEFAULTS: dict[str, Any] = {
 }
 
 # Откуда брать бинарники. asset — regex имени файла релиза для архитектуры.
+# optional — «по требованию»: install all/missing ставит его, только если он нужен туннелю из конфига.
 COMPONENTS: dict[str, dict[str, Any]] = {
     "sing-box": {
         "repo": "SagerNet/sing-box", "bin": "sing-box", "version_args": ["version"],
@@ -177,7 +178,7 @@ COMPONENTS: dict[str, dict[str, Any]] = {
     },
     "wireproxy-awg": {  # форк wireproxy с AmneziaWG; в архиве бинарник тоже называется wireproxy
         "repo": "artem-russkikh/wireproxy-awg", "bin": "wireproxy-awg", "archive_bin": "wireproxy",
-        "version_args": ["--version"],
+        "version_args": ["--version"], "optional": True,
         "asset": {"amd64": r"^wireproxy_linux_amd64\.tar\.gz$", "arm64": r"^wireproxy_linux_arm64\.tar\.gz$"},
     },
     "wg-obfuscator": {
@@ -2146,6 +2147,12 @@ def _extract(archive: Path, asset: str, binname: str) -> bytes:
     return archive.read_bytes()
 
 
+def needed(cfg: dict | None, comp: dict, inst: dict) -> bool:
+    """Ставить ли компонент при install all/missing: обязательный — всегда, optional — если уже стоит
+    или его запускает какой-нибудь туннель."""
+    return not comp.get("optional") or bool(inst.get("path")) or bool(affected_units(cfg, comp["bin"]))
+
+
 def affected_units(cfg: dict | None, binname: str) -> list[str]:
     if not cfg:
         return []
@@ -2573,6 +2580,7 @@ async def api_updates():
                                                   "error", "checked_at")},
             "update": bool(inst.get("path")) and update_available(inst.get("version"), latest.get("version")),
             "used_by": affected_units(cfg, comp["bin"]),
+            "optional": bool(comp.get("optional")),
         })
     return {"components": rows, "meta": STATE.get("updates_meta", {}), "busy": INSTALL_LOCK.locked(),
             "bin_dir": str(BIN_DIR), "enabled": bool(cfg and cfg["updates"]["enabled"]),
@@ -2624,7 +2632,7 @@ async def _cli_install(names: list[str]) -> int:
         names = []
         for n, c in comps.items():
             inst = await installed_info(n, c)
-            if mode == "all" or not inst.get("path"):
+            if needed(cfg, c, inst) and (mode == "all" or not inst.get("path")):
                 names.append(n)
     rc = 0
     for n in names:

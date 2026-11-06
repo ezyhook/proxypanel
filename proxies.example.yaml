@@ -98,13 +98,13 @@ tunnels:
 
   # AmneziaWG: WireGuard со своей обфускацией (Jc, S1…, H1…) — клиент wireproxy-awg.
   # Конфиг — экспорт awg-quick из клиента Amnezia как есть; obfuscator здесь не нужен.
-  nl-awg:
-    kind: amneziawg
-    description: AmneziaWG → SOCKS, Нидерланды
-    port: 1088
-    autostart: false           # включите, когда впишете свои сервер/ключи
-    http_port: 1188            # wireproxy-awg сам: [http] BindAddress
-    config: awg-nl.conf        # cmd не нужен: wireproxy-awg -c {config}
+  # Клиент ставится по требованию: раскомментируйте, «Применить» → «Компоненты» → wireproxy-awg.
+  # nl-awg:
+  #   kind: amneziawg
+  #   description: AmneziaWG → SOCKS, Нидерланды
+  #   port: 1088
+  #   http_port: 1188          # wireproxy-awg сам: [http] BindAddress
+  #   config: awg-nl.conf      # образец лежит рядом; cmd не нужен: wireproxy-awg -c {config}
 
   # То же самое, но WireGuard силами sing-box (отдельный процесс sing-box).
   de-wg-sb:

@@ -132,3 +132,35 @@ def test_apply_ok_or_no_dns_does_not_block(app, fake_awg, rc, out):
     set_result(rc, out)
     r = asyncio.run(app.apply_config())
     assert r["blocked"] == [] and ("enable", "--now", "pp-a.service") in calls
+
+
+# ── по требованию ──
+def test_optional_component_installed_only_when_needed(app, write):
+    comp = app.COMPONENTS["wireproxy-awg"]
+    empty = app.parse_config("")
+    assert not app.needed(empty, comp, {})  # свежая установка без AWG — не качаем
+    assert app.needed(empty, comp, {"path": "/x/wireproxy-awg"})  # уже стоит — обновляем как обычно
+    write("awg.conf", AWG_IFACE + AWG_PEER)
+    cfg = app.parse_config("tunnels:\n  a: {kind: amneziawg, port: 1088, config: awg.conf, autostart: false}\n")
+    assert app.needed(cfg, comp, {})
+    assert app.needed(empty, app.COMPONENTS["wireproxy"], {})  # обязательные — всегда
+
+
+def test_cli_install_missing_skips_unused_optional(app, conf_dir, monkeypatch):
+    app.CONF_FILE.write_text("tunnels: {}\n")
+    done = []
+
+    async def fake_install(name):
+        done.append(name)
+        return {"version": "1", "verified": True, "warnings": []}
+
+    async def nothing_installed(name, comp):
+        return {"path": None}
+
+    monkeypatch.setattr(app, "install_component", fake_install)
+    monkeypatch.setattr(app, "installed_info", nothing_installed)
+    assert asyncio.run(app._cli_install(["missing"])) == 0
+    assert "wireproxy-awg" not in done and {"sing-box", "wireproxy"} <= set(done)
+    done.clear()
+    asyncio.run(app._cli_install(["wireproxy-awg"]))  # явно по имени — ставится
+    assert done == ["wireproxy-awg"]

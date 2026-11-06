@@ -448,14 +448,17 @@ function renderComps() {
     const i = c.installed || {}, l = c.latest || {}, busyNow = installing.has(c.name) || U.busy;
     const inst = i.path ? `<span class="mono">${esc(i.version || "?")}</span>
         ${i.managed ? "" : ' <span class="tag" title="Установлен не панелью; новая версия встанет в ~/main/bin и будет использоваться вместо него">системный</span>'}
-        <small title="${esc(i.path)}">${esc(shortPath(i.path))}</small>` : '<span class="mute">не установлен</span>';
+        <small title="${esc(i.path)}">${esc(shortPath(i.path))}</small>`
+      : c.optional && !(c.used_by || []).length
+        ? '<span class="mute" title="Ставится, когда понадобится туннелю, или кнопкой «Установить»">по требованию</span>'
+        : '<span class="mute">не установлен</span>';
     const lat = l.error ? `<span class="bad" title="${esc(l.error)}">ошибка проверки</span><small title="${esc(l.error)}">${esc(l.error)}</small>`
       : l.version ? `<a class="mono" style="color:inherit" href="${esc(l.html_url)}" target="_blank" rel="noopener">${esc(l.version)}</a>
           ${c.update ? ' <span class="tag" style="color:var(--acc)">новая</span>' : ""}
           <small>${esc(l.asset || "")} ${mb(l.size)}</small>` : '<span class="mute">—</span>';
     let btn = "";
     if (busyNow) btn = `<button disabled>${installing.has(c.name) ? "устанавливаю…" : "занято…"}</button>`;
-    else if (!i.path) btn = `<button class="primary" onclick="install(${jsa(c.name)})">Установить</button>`;
+    else if (!i.path) btn = `<button ${c.optional && !(c.used_by || []).length ? "" : 'class="primary" '}onclick="install(${jsa(c.name)})">Установить</button>`;
     else if (c.update) btn = `<button class="primary" onclick="install(${jsa(c.name)})">Обновить до ${esc(l.version)}</button>`;
     else if (!i.managed) btn = `<button onclick="install(${jsa(c.name)})" title="Поставить в ~/main/bin">В ~/main/bin</button>`;
     else btn = `<button onclick="install(${jsa(c.name)})" title="Скачать и поставить заново">Переустановить</button>`;

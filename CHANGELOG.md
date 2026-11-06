@@ -5,7 +5,8 @@
 **AmneziaWG**
 - `kind: amneziawg` (`awg`): клиент wireproxy-awg, конфиг awg-quick из клиента Amnezia как есть,
   порты SOCKS/HTTP — как у wireproxy.
-- Компонент `wireproxy-awg` в «Компонентах»: sha256, пробный запуск, откат; ставится рядом с wireproxy.
+- Компонент `wireproxy-awg` в «Компонентах»: sha256, пробный запуск, откат; ставится рядом с wireproxy
+  и по требованию — `install.sh` не качает его, пока в конфиге нет AWG-туннеля.
 - При «Применить» конфиг проверяется `wireproxy-awg -n`; с ошибкой туннель не перезапускается.
 - AWG-параметры в конфиге с `kind: wireproxy` и `obfuscator` у AmneziaWG — ошибка конфига.
 

@@ -182,7 +182,9 @@ AmneziaWG — WireGuard со своей обфускацией: мусорные
 `Jmax`), случайные отступы (`S1`…`S4`), свои типы заголовков (`H1`…`H4`), сигнатурные пакеты
 (`I1`…`I5`). Клиент — [wireproxy-awg](https://github.com/artem-russkikh/wireproxy-awg), форк
 wireproxy: панель ставит его в «Компонентах» как `~/main/bin/wireproxy-awg`, рядом с обычным
-wireproxy.
+wireproxy. Это компонент **по требованию**: `install.sh` его не качает, пока в конфиге нет
+AWG-туннеля. Опишите туннель, нажмите «Применить», затем «Компоненты» → «Установить» (или
+`app.py install wireproxy-awg`). Повторный `install.sh` поставит его сам.
 
 ```yaml
 nl-awg:
@@ -343,6 +345,8 @@ groups:
 ## Компоненты: обновления бинарников
 
 Раздел «Компоненты» (sing-box, hysteria, wireproxy, wireproxy-awg, wg-obfuscator) или CLI `app.py check | install NAME|all|missing | rollback NAME`.
+- **По требованию.** wireproxy-awg ставится `install all|missing` (и `install.sh`), только если
+  его запускает туннель из конфига или он уже установлен.
 - **Как ставится.** Скачивание с GitHub, проверка sha256 (у wg-obfuscator сумм нет, будет
   предупреждение), пробный запуск `--version`, замена бинарника со старым в `*.old` и
   перезапуск только тех туннелей и обфускаторов, которые его используют.
