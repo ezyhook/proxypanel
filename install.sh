@@ -2,7 +2,7 @@
 # Установка/обновление ProxyPanel для текущего пользователя (Ubuntu 24.04+/26.04).
 # Запускать от обычного пользователя, НЕ от root:  ./install.sh
 #
-#   ~/main/bin                        бинарники (sing-box, hysteria, wireproxy, wg-obfuscator)
+#   ~/main/bin                        бинарники (sing-box, hysteria, wireproxy, wireproxy-awg, wg-obfuscator)
 #   ~/main/.config/proxypanel         конфиги
 #   ~/main/.local/share/proxypanel    приложение + venv
 #
@@ -135,7 +135,7 @@ if [[ $FRESH == 1 ]]; then
   cat <<EOF
 
 Готово. Дальше:
-  1. Положите конфиги клиентов (hysteria, wireproxy, wg-obfuscator) в $CONF_DIR
+  1. Положите конфиги клиентов (hysteria, wireproxy, AmneziaWG, wg-obfuscator) в $CONF_DIR
   2. Опишите туннели в панели → «Конфиг» (или в $CONF_DIR/proxies.yaml)
   3. «Сохранить и применить»
 EOF

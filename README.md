@@ -1,11 +1,11 @@
 # ProxyPanel
 
-Локальная веб-панель для SOCKS/HTTP-туннелей на Linux: **ssh, hysteria2, wireproxy, sing-box,
-wg-obfuscator** — запуск, автозагрузка, проверка здоровья, цепочки, обновление бинарников.
+Локальная веб-панель для SOCKS/HTTP-туннелей на Linux: **ssh, hysteria2, wireproxy, AmneziaWG,
+sing-box, wg-obfuscator** — запуск, автозагрузка, проверка здоровья, цепочки, обновление бинарников.
 
 *A local web panel for Linux that runs and supervises your proxy tunnels (ssh, hysteria2,
 wireproxy, sing-box, wg-obfuscator) as systemd user services: one tunnel — one process —
-one SOCKS/HTTP port, with chaining, health checks, desktop notifications and binary updates.
+one SOCKS/HTTP port, with AmneziaWG support, chaining, health checks, desktop notifications and binary updates.
 The UI and docs are in Russian.*
 
 ![ProxyPanel](docs/screenshot.png)
@@ -18,6 +18,7 @@ The UI and docs are in Russian.*
 - **Все популярные клиенты.** ssh/autossh, hysteria2, wireproxy и sing-box: vless, trojan,
   shadowsocks, tuic, wireguard… sing-box можно описать в YAML, загрузить объект из JSON
   или запустить свой полный конфиг.
+- **AmneziaWG.** Конфиг из клиента Amnezia подключается как есть, клиент — wireproxy-awg.
 - **wg-obfuscator как обёртка** для WireGuard (wireproxy или sing-box). Панель сама
   поднимает обфускатор и направляет на него Endpoint.
 - **Цепочки «туннель через туннель»** (`via`) и **HTTP-прокси рядом с SOCKS** (`http_port`).
@@ -65,7 +66,7 @@ git clone https://github.com/ezyhook/proxypanel.git && cd proxypanel
 
 | Путь | Что |
 |---|---|
-| `~/main/bin/` | sing-box, hysteria, wireproxy, wg-obfuscator (+ `*.old` для отката), `pp-run` |
+| `~/main/bin/` | sing-box, hysteria, wireproxy, wireproxy-awg, wg-obfuscator (+ `*.old` для отката), `pp-run` |
 | `~/main/.config/proxypanel/proxies.yaml` | ваш конфиг (бэкап `.yaml.bak` при сохранении из панели) |
 | `~/main/.config/proxypanel/*.conf, *.yaml, *.json` | ваши конфиги клиентов (wireproxy, hysteria, sing-box…) |
 | `~/main/.config/proxypanel/run/` | сгенерированное: скрипты, конфиги с подстановками, обфускаторы |
@@ -174,6 +175,34 @@ PSK проверяется при сохранении: нужно 44 симво
 
 У wireproxy `PresharedKey = …` пишется в `[Peer]` его конфига, как обычно. Панель этот
 ключ не трогает, в том числе с обёрткой wg-obfuscator.
+
+## AmneziaWG (`kind: amneziawg`)
+
+AmneziaWG — WireGuard со своей обфускацией: мусорные пакеты перед рукопожатием (`Jc`, `Jmin`,
+`Jmax`), случайные отступы (`S1`…`S4`), свои типы заголовков (`H1`…`H4`), сигнатурные пакеты
+(`I1`…`I5`). Клиент — [wireproxy-awg](https://github.com/artem-russkikh/wireproxy-awg), форк
+wireproxy: панель ставит его в «Компонентах» как `~/main/bin/wireproxy-awg`, рядом с обычным
+wireproxy.
+
+```yaml
+nl-awg:
+  kind: amneziawg            # или awg
+  port: 1088
+  http_port: 1188            # HTTP-прокси отдаёт сам клиент
+  config: awg-nl.conf        # экспорт awg-quick из клиента Amnezia, как есть
+```
+
+- **Конфиг.** Экспорт из клиента Amnezia (формат AmneziaWG / awg-quick) кладётся без правок:
+  лишние для прокси поля (`DNS`, `Table`, `PostUp`…) клиент пропускает. `[Socks5]`/`[http]`
+  панель допишет сама, как у wireproxy. Работает и `WGConfig = awg.conf` из конфига wireproxy.
+- **Проверка при «Применить».** Параметры проверяет сам клиент (`wireproxy-awg -n`):
+  пересекающиеся `H1`–`H4`, неверные `S1`/`S2` и т. п. С ошибкой туннель не перезапускается,
+  уже работающий процесс остаётся на старом конфиге. Если не резолвится адрес сервера (нет
+  сети), это не считается ошибкой конфига.
+- **AWG-конфиг с `kind: wireproxy` — ошибка.** Обычный wireproxy молча пропускает `Jc`/`H1`… и
+  шлёт чистый WireGuard, на который сервер AmneziaWG не отвечает.
+- **Без `obfuscator`.** Обфускация у AmneziaWG своя, сервер AWG не поймёт трафик wg-obfuscator.
+- **`via`** — как у wireproxy: UDP-клиент через SOCKS не ходит.
 
 ## Обёртка wg-obfuscator
 
@@ -313,7 +342,7 @@ groups:
 
 ## Компоненты: обновления бинарников
 
-Раздел «Компоненты» или CLI `app.py check | install NAME|all|missing | rollback NAME`.
+Раздел «Компоненты» (sing-box, hysteria, wireproxy, wireproxy-awg, wg-obfuscator) или CLI `app.py check | install NAME|all|missing | rollback NAME`.
 - **Как ставится.** Скачивание с GitHub, проверка sha256 (у wg-obfuscator сумм нет, будет
   предупреждение), пробный запуск `--version`, замена бинарника со старым в `*.old` и
   перезапуск только тех туннелей и обфускаторов, которые его используют.

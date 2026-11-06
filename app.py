@@ -2,7 +2,7 @@
 """ProxyPanel — локальная панель для управления и комбинирования SOCKS-туннелей.
 
 Раскладка (корень ~/main, переопределяется переменной PP_MAIN):
-  ~/main/bin/                          бинарники: sing-box, hysteria, wireproxy, wg-obfuscator
+  ~/main/bin/                          бинарники: sing-box, hysteria, wireproxy, wireproxy-awg, wg-obfuscator
   ~/main/.config/proxypanel/           proxies.yaml, конфиги клиентов, state.json, run/*.sh
   ~/main/.local/share/proxypanel/      само приложение и venv
   ~/.config/systemd/user/pp-*.service  units (systemd читает их только оттуда)
@@ -13,6 +13,7 @@
     каждое в свой порт;
   * native-туннели: outbound/endpoint sing-box (vless/hysteria2/wireguard/...) — панель
     собирает для каждого отдельный процесс sing-box;
+  * AmneziaWG (wireproxy-awg): конфиг awg-quick из клиента Amnezia как есть;
   * обёртка wg-obfuscator для WireGuard-туннелей (wireproxy или native wireguard):
     панель сама поднимает обфускатор и направляет на него Endpoint;
   * цепочки «туннель через туннель» (via): ssh через ProxyCommand, native через detour;
@@ -85,16 +86,24 @@ NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ACTIONS = {"start", "stop", "restart", "enable", "disable"}
 SSH_PROGS = {"ssh", "autossh"}
-UDP_KINDS = {"hysteria", "hysteria2", "wireproxy", "wireguard", "wg-obfuscator", "tuic"}
+UDP_KINDS = {"hysteria", "hysteria2", "wireproxy", "amneziawg", "wireguard", "wg-obfuscator", "tuic"}
 UDP_OUT_TYPES = {"hysteria", "hysteria2", "tuic", "wireguard"}
 # cmd по умолчанию, если задан только config + kind
 KIND_CMDS = {
     "wireproxy": "wireproxy -c {config}",
+    "amneziawg": "wireproxy-awg -c {config}",
     "hysteria": "hysteria client -c {config}",
     "hysteria2": "hysteria client -c {config}",
     "sing-box": "sing-box run -c {config}",
     "wg-obfuscator": "wg-obfuscator -c {config}",
 }
+# другие написания kind и имена программ → kind
+KIND_ALIASES = {"awg": "amneziawg", "wireproxy-awg": "amneziawg"}
+# клиенты с конфигом wireproxy: [Interface]/[Peer]/[Socks5]/[http], WGConfig
+WIREPROXY_KINDS = {"wireproxy", "amneziawg"}
+# параметры AmneziaWG в [Interface] — по ним узнаём AWG-конфиг (awg-quick, экспорт из клиента Amnezia)
+AWG_KEYS = ("Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4",
+            "I1", "I2", "I3", "I4", "I5", "HeaderProtectionKey")
 # параметры wg-obfuscator, которые можно передать в obfuscator: {...}
 OBFS_KEYS = {"masking", "in-timeout", "resolve-interval", "max-dummy", "idle-timeout", "max-clients",
              "verbose", "fwmark"}
@@ -166,6 +175,11 @@ COMPONENTS: dict[str, dict[str, Any]] = {
         "repo": "windtf/wireproxy", "bin": "wireproxy", "version_args": ["--version"],
         "asset": {"amd64": r"^wireproxy_linux_amd64\.tar\.gz$", "arm64": r"^wireproxy_linux_arm64\.tar\.gz$"},
     },
+    "wireproxy-awg": {  # форк wireproxy с AmneziaWG; в архиве бинарник тоже называется wireproxy
+        "repo": "artem-russkikh/wireproxy-awg", "bin": "wireproxy-awg", "archive_bin": "wireproxy",
+        "version_args": ["--version"],
+        "asset": {"amd64": r"^wireproxy_linux_amd64\.tar\.gz$", "arm64": r"^wireproxy_linux_arm64\.tar\.gz$"},
+    },
     "wg-obfuscator": {
         "repo": "ClusterM/wg-obfuscator", "bin": "wg-obfuscator", "version_args": ["--version"],
         "asset": {"amd64": r"^wg-obfuscator-v[\d.]+-linux-x64\.tar\.gz$",
@@ -197,6 +211,12 @@ def _prog(cmd: str) -> str:
     except (ValueError, IndexError):
         first = (cmd.split() or [""])[0]
     return Path(first).name
+
+
+def client_kind(t: dict) -> str:
+    """Какой клиент запускает туннель: kind, если он из KIND_CMDS, иначе — по программе в cmd."""
+    k = t["kind"] if t.get("kind") in KIND_CMDS else _prog(t.get("cmd") or "")
+    return KIND_ALIASES.get(k, k)
 
 
 def _conf_path(p: str) -> Path:
@@ -322,10 +342,10 @@ def _port_of(addr: Any) -> int | None:
 
 def file_ports(t: dict) -> tuple[int | None, int | None]:
     """(SOCKS, HTTP) порты, записанные в самом файле клиента — чтобы не дублировать их в proxies.yaml."""
-    text, kind = t["_config_text"], (t["kind"] if t["kind"] in KIND_CMDS else _prog(t["cmd"]))
+    text, kind = t["_config_text"], client_kind(t)
     if "{port}" in text and "{http_port}" in text:
         return None, None
-    if kind == "wireproxy":
+    if kind in WIREPROXY_KINDS:
         s = ini_values(text, "Socks5", "BindAddress")
         h = ini_values(text, "http", "BindAddress")
         return (_port_of(s[0]) if s else None), (_port_of(h[0]) if h else None)
@@ -408,6 +428,8 @@ def parse_config(text: str) -> dict:
         for key in ("description", "kind"):
             if key in t and (not isinstance(t[key], str) or "\n" in t[key] or "\r" in t[key]):
                 raise ConfigError(f"туннель {name}: {key} — строка в одну строку")
+        if t.get("kind") in KIND_ALIASES:  # kind: awg → amneziawg
+            t["kind"] = KIND_ALIASES[t["kind"]]
         rs = t.get("restart_sec", 3)
         if isinstance(rs, bool) or not isinstance(rs, int) or not 0 <= rs <= 3600:
             raise ConfigError(f"туннель {name}: restart_sec — целое число секунд 0…3600")
@@ -475,9 +497,13 @@ def parse_config(text: str) -> dict:
                 raise ConfigError(f"туннель {name}: cmd должен быть строкой")
             if "{config}" in t["cmd"] and conf is None:
                 raise ConfigError(f"туннель {name}: в cmd есть {{config}}, но не задан config")
-            t.setdefault("kind", _prog(t["cmd"]))
+            t.setdefault("kind", KIND_ALIASES.get(_prog(t["cmd"]), _prog(t["cmd"])))
             if "_config_text" in t:
                 _sync_ports_from_file(name, t, cfg)
+                if client_kind(t) == "wireproxy" and (awg := _awg_params(name, t)):
+                    # обычный wireproxy молча пропустит Jc/H1… и будет слать чистый WireGuard — сервер AWG не ответит
+                    raise ConfigError(f"туннель {name}: в конфиге параметры AmneziaWG ({', '.join(awg[:4])}…) — "
+                                      "укажите kind: amneziawg (клиент wireproxy-awg)")
         if t.get("port") is not None:
             take_port(t["port"], name)
         if native:
@@ -496,8 +522,8 @@ def parse_config(text: str) -> dict:
         if native:
             t["_http_port"], t["_http_mode"] = (hp or t["port"]), "native"  # mixed-вход sing-box понимает и HTTP
         elif hp is not None:
-            k = t["kind"] if t["kind"] in KIND_CMDS else _prog(t["cmd"])
-            if "_config_text" in t and k == "wireproxy":
+            k = client_kind(t)
+            if "_config_text" in t and k in WIREPROXY_KINDS:
                 mode = "wireproxy"
             elif "_config_text" in t and k in ("hysteria", "hysteria2"):
                 mode = "hysteria"
@@ -561,7 +587,10 @@ def parse_config(text: str) -> dict:
             target = ob.get("target") or (f"{peers[0].get('address')}:{peers[0].get('port')}"
                                           if peers[0].get("address") and peers[0].get("port") else None)
         else:
-            if t["kind"] != "wireproxy" and _prog(t["cmd"]) != "wireproxy":
+            if client_kind(t) == "amneziawg":
+                raise ConfigError(f"туннель {name}: obfuscator не нужен AmneziaWG — у него своя обфускация "
+                                  "(Jc, S1…, H1…), а сервер AWG не поймёт трафик wg-obfuscator")
+            if client_kind(t) != "wireproxy":
                 raise ConfigError(f"туннель {name}: obfuscator оборачивает только WireGuard — wireproxy "
                                   "или sing-box endpoint wireguard (для отдельного процесса — kind: wg-obfuscator)")
             if "_config_text" not in t:
@@ -610,7 +639,7 @@ def parse_config(text: str) -> dict:
             else:
                 hint = ("этот клиент работает по UDP и не умеет ходить через SOCKS — опишите его как native-туннель "
                         "(outbound/endpoint sing-box), тогда via заработает") if t["kind"] in UDP_KINDS or prog in {
-                            "hysteria", "wireproxy", "wg-obfuscator"} else \
+                            "hysteria", "wireproxy", "wireproxy-awg", "wg-obfuscator"} else \
                     "используйте подстановки {via}, {via_host}, {via_port} или {via_url} в cmd или config"
                 raise ConfigError(f"туннель {name}: via для «{prog}» не настраивается автоматически — {hint}")
     for name in tunnels:
@@ -745,6 +774,18 @@ def _wireproxy_endpoints(name: str, t: dict) -> list[str]:
     return eps
 
 
+def _awg_params(name: str, t: dict) -> list[str]:
+    """Параметры AmneziaWG в [Interface] конфига wireproxy или подключённого WGConfig."""
+    text = t["_config_text"]
+    inc = ini_values(text, "Interface", "WGConfig") or ini_values(text, "", "WGConfig")
+    if inc:
+        try:
+            text += "\n" + _conf_path(inc[0]).read_text()
+        except OSError as e:
+            raise ConfigError(f"туннель {name}: не читается WGConfig {_conf_path(inc[0])}: {e.strerror}") from None
+    return [k for k in AWG_KEYS if ini_values(text, "Interface", k)]
+
+
 def load_config() -> dict:
     if not CONF_FILE.exists():
         raise ConfigError(f"нет файла {CONF_FILE}")
@@ -837,8 +878,8 @@ def render_config(name: str, t: dict, cfg: dict) -> dict[Path, str]:
     src = t["_config_text"]
     text = subst(src, name, t, cfg)
     out: dict[Path, str] = {}
-    kind = t["kind"] if t["kind"] in KIND_CMDS else _prog(t["cmd"])
-    if kind == "wireproxy":
+    kind = client_kind(t)
+    if kind in WIREPROXY_KINDS:
         for inc in ini_values(text, "Interface", "WGConfig") + ini_values(text, "", "WGConfig"):
             if inc and not os.path.isabs(os.path.expanduser(inc)):
                 text = re.sub(rf"(?mi)^(\s*WGConfig\s*=\s*){re.escape(inc)}\s*$",
@@ -1471,6 +1512,24 @@ async def _singbox_check(binary: str | None, conf: dict, label: str) -> None:
         raise ConfigError(f"sing-box check ({label}) не прошёл:\n{msg}")
 
 
+async def _awg_configtest(name: str, t: dict, cfg: dict) -> str | None:
+    """wireproxy-awg -n: параметры AmneziaWG (H1–H4, S1/S2, I1…) проверяет сам клиент. Текст ошибки или None."""
+    try:
+        prog = _find_prog(shlex.split(tunnel_cmd(name, t, cfg))[0])
+    except (ValueError, IndexError):
+        return None
+    if not prog:
+        return None  # «программа не найдена» уже сообщает preflight
+    rc, out, err = await run(prog, "-n", "-c", str(config_out(name, t)), timeout=15)
+    if rc == 0:
+        return None
+    msg = (err or out).strip().splitlines()[-1:] or [f"код {rc}"]
+    msg = re.sub(r"^\d{4}/\d\d/\d\d \d\d:\d\d:\d\d ", "", msg[0])  # без метки времени log.Print
+    if rc == 124 or "lookup " in msg:  # configtest резолвит Endpoint — без DNS это не ошибка конфига
+        return None
+    return msg[:300]
+
+
 def conf_hash() -> str | None:
     try:
         return hashlib.sha256(CONF_FILE.read_bytes()).hexdigest()
@@ -1565,6 +1624,16 @@ async def _apply_config() -> dict:
         c2 = put(upath, render_singbox_unit(binary or str(BIN_DIR / "sing-box")))
         wanted[SINGBOX_UNIT] = (new, c1 or c2, True)
 
+    # конфиги AmneziaWG проверяем самим клиентом: с ошибкой туннель не перезапускаем (старый процесс живёт)
+    for name, t in cfg["tunnels"].items():
+        if client_kind(t) != "amneziawg" or "_config_src" not in t or unit_of(name) in blocked_units:
+            continue
+        if bad := await _awg_configtest(name, t, cfg):
+            msg = f"{name} не запускаю: конфиг AmneziaWG не прошёл проверку: {bad}"
+            blocked_units[unit_of(name)] = msg
+            report["warnings"].append(msg)
+            report["blocked"].append(name)
+
     if UNIT_DIR.exists():
         for p in sorted(UNIT_DIR.glob(f"{PREFIX}*.service")):
             if p.name in wanted or p.name == PANEL_UNIT:
@@ -1597,9 +1666,10 @@ async def _apply_config() -> dict:
             looping = (st_before.get(unit) or {}).get("active") in ("activating", "failed")
             if looping:
                 await sctl("stop", unit)
-            if looping or (new and autostart):
+            short = unit.removeprefix(PREFIX).removesuffix(".service")
+            if (looping or (new and autostart)) and short not in report["blocked"]:
                 report["warnings"].append(blocked_units[unit])
-                report["blocked"].append(unit.removeprefix(PREFIX).removesuffix(".service"))
+                report["blocked"].append(short)
             if new:
                 report["created"].append(unit)
                 if autostart:  # после исправления проблемы туннель поднимется сам при загрузке
@@ -2054,6 +2124,7 @@ def _expected_sha(info: dict, sums_text: str | None) -> str | None:
 
 
 def _extract(archive: Path, asset: str, binname: str) -> bytes:
+    """Бинарник binname из скачанного файла релиза (имя внутри архива — comp["archive_bin"])."""
     if asset.endswith((".tar.gz", ".tgz", ".tar.xz", ".tar")):
         with tarfile.open(archive) as tf:
             files = [m for m in tf.getmembers() if m.isfile()]
@@ -2136,7 +2207,7 @@ async def install_component(name: str) -> dict:
             if expected and expected != sha:
                 raise RuntimeError(f"sha256 не совпадает: ожидалось {expected}, получено {sha}")
             verified = bool(expected)
-            data = _extract(dl, info["asset"], comp["bin"])
+            data = _extract(dl, info["asset"], comp.get("archive_bin") or comp["bin"])
             new = BIN_DIR / f".{comp['bin']}.new"
             new.write_bytes(data)
             new.chmod(0o755)

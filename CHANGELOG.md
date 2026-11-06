@@ -2,6 +2,13 @@
 
 ## Не выпущено
 
+**AmneziaWG**
+- `kind: amneziawg` (`awg`): клиент wireproxy-awg, конфиг awg-quick из клиента Amnezia как есть,
+  порты SOCKS/HTTP — как у wireproxy.
+- Компонент `wireproxy-awg` в «Компонентах»: sha256, пробный запуск, откат; ставится рядом с wireproxy.
+- При «Применить» конфиг проверяется `wireproxy-awg -n`; с ошибкой туннель не перезапускается.
+- AWG-параметры в конфиге с `kind: wireproxy` и `obfuscator` у AmneziaWG — ошибка конфига.
+
 **Исправления**
 - wireproxy: если `[Socks5]`/`[http]` уже есть, но без `BindAddress`, панель дописывает
   его в эту секцию, а не создаёт вторую.

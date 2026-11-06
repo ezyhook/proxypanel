@@ -9,7 +9,7 @@
 # каждое приложение ходит в свой порт. Комбинатор с автовыбором — опция (singbox ниже).
 #
 # Виды туннелей (kind)
-#   ssh, hysteria2, wireproxy, wg-obfuscator … — внешний процесс:
+#   ssh, hysteria2, wireproxy, amneziawg, wg-obfuscator … — внешний процесс:
 #       cmd        команда запуска (на переднем плане, без демонизации!)
 #       config     файл клиента (путь от ~/main/.config/proxypanel). Панель кладёт его копию
 #                  в run/ с подстановками и сама выставляет порты: wireproxy → [Socks5]/[http]
@@ -95,6 +95,16 @@ tunnels:
       key: CHANGE_ME              # тот же ключ, что у обфускатора на сервере
       masking: STUN
       in-timeout: 60              # пересоздать UDP-сессию, если сервер замолчал
+
+  # AmneziaWG: WireGuard со своей обфускацией (Jc, S1…, H1…) — клиент wireproxy-awg.
+  # Конфиг — экспорт awg-quick из клиента Amnezia как есть; obfuscator здесь не нужен.
+  nl-awg:
+    kind: amneziawg
+    description: AmneziaWG → SOCKS, Нидерланды
+    port: 1088
+    autostart: false           # включите, когда впишете свои сервер/ключи
+    http_port: 1188            # wireproxy-awg сам: [http] BindAddress
+    config: awg-nl.conf        # cmd не нужен: wireproxy-awg -c {config}
 
   # То же самое, но WireGuard силами sing-box (отдельный процесс sing-box).
   de-wg-sb:
