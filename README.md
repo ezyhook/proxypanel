@@ -51,6 +51,8 @@ git clone https://github.com/ezyhook/proxypanel.git && cd proxypanel
 Откройте http://127.0.0.1:8800 → «Конфиг». Опишите туннели (пример с комментариями
 уже лежит в конфиге) → «Сохранить и применить».
 
+Пошаговое руководство по настройке со всеми полями и значениями по умолчанию — [docs/configuration.md](docs/configuration.md).
+
 `install.sh` делает следующее:
 - ставит пакеты `python3-venv autossh libnotify-bin netcat-openbsd proxychains4`;
 - кладёт приложение в `~/main/.local/share/proxypanel`, а `pp-run` — в `~/main/bin`
