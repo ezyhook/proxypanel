@@ -199,3 +199,14 @@ def test_apps_validation(app):
 
 def test_component_names(app):
     assert "имя компонента" in err(app, "updates:\n  components:\n    \"x'y\": {repo: a/b, bin: x}\n")
+
+
+def test_requires_cycle(app):
+    assert "цикл в requires/via" in err(app, "tunnels:\n  a: {port: 1081, cmd: x, requires: [b]}\n"
+                                              "  b: {port: 1082, cmd: y, requires: [a]}\n")
+    assert "цикл в requires/via" in err(app, "tunnels:\n  a: {port: 1081, cmd: x, requires: [a]}\n")
+    # requires навстречу via — тоже цикл зависимостей units
+    assert "цикл в requires/via" in err(app, "tunnels:\n  a: {port: 1081, cmd: 'ssh -D {port} h', requires: [b]}\n"
+                                              "  b: {port: 1082, cmd: 'ssh -D {port} h', via: a}\n")
+    parse(app, "tunnels:\n  a: {port: 1081, cmd: x}\n  b: {port: 1082, cmd: y, requires: [a]}\n"
+               "  c: {port: 1083, cmd: z, requires: [a, b]}\n")

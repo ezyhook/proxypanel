@@ -219,18 +219,31 @@ def ini_values(text: str, section: str, key: str) -> list[str]:
 
 
 def ini_set(text: str, section: str, key: str, value: str, add_section: bool = False) -> str:
-    """Заменить key = ... в секциях [section]; при add_section — дописать секцию, если её нет."""
+    """Заменить key = ... в секциях [section]; при add_section — дописать ключ в первую такую секцию,
+    а если секции нет — дописать и её."""
     lines, cur, found = text.splitlines(), "", False
+    sec_end: int | None = None  # куда вставить ключ: после последней непустой строки первой [section]
+    first_done = False
     for i, line in enumerate(lines):
         s = line.strip()
         if s.startswith("[") and s.endswith("]"):
             cur = s[1:-1].strip().lower()
-        elif (cur == section.lower() and "=" in s and not s.startswith(("#", ";"))
-              and s.split("=", 1)[0].strip().lower() == key.lower()):
-            lines[i] = f"{key} = {value}"
-            found = True
+            if sec_end is not None:
+                first_done = True
+            if cur == section.lower() and sec_end is None:
+                sec_end = i + 1
+        elif cur == section.lower():
+            if s and not first_done:
+                sec_end = i + 1
+            if ("=" in s and not s.startswith(("#", ";"))
+                    and s.split("=", 1)[0].strip().lower() == key.lower()):
+                lines[i] = f"{key} = {value}"
+                found = True
     if not found and add_section:
-        lines += ["", f"[{section}]", f"{key} = {value}"]
+        if sec_end is not None:  # секция есть, но ключа в ней нет — не плодим вторую [section]
+            lines.insert(sec_end, f"{key} = {value}")
+        else:
+            lines += ["", f"[{section}]", f"{key} = {value}"]
     return "\n".join(lines) + "\n"
 
 
@@ -561,18 +574,6 @@ def parse_config(text: str) -> dict:
         if not target:
             raise ConfigError(f"туннель {name}: не найден адрес сервера — задайте obfuscator.target: host:port")
         t["_obfs_target"] = str(target)
-    used_obfs = {o["listen_port"] for o in (t.get("obfuscator") for t in tunnels.values())
-                 if isinstance(o, dict) and o.get("listen_port")}
-    nxt = OBFS_PORT_BASE
-    for name in sorted(n for n, t in tunnels.items() if t.get("obfuscator")):
-        lp = tunnels[name]["obfuscator"].get("listen_port")
-        if lp is None:
-            while nxt in ports or nxt in used_obfs:
-                nxt += 1
-            lp = nxt
-        take_port(lp, f"{name}-obfs")
-        tunnels[name]["_obfs_port"] = lp
-
     # ── цепочки (via) ──
     for name, t in tunnels.items():
         via = t.get("via")
@@ -621,6 +622,24 @@ def parse_config(text: str) -> dict:
             seen.append(cur)
             n2 = tunnels[cur].get("via")
             cur = n2 if n2 in tunnels else None
+    # requires и via вместе дают Requires=/After= в units — цикл systemd не запустит
+    def deps(n: str) -> list[str]:
+        v = tunnels[n].get("via")
+        return list(tunnels[n]["requires"]) + ([v] if v in tunnels else [])
+
+    done: set[str] = set()
+
+    def visit(n: str, path: list[str]) -> None:
+        if n in path:
+            raise ConfigError("цикл в requires/via: " + " → ".join(path[path.index(n):] + [n]))
+        if n in done:
+            return
+        for d in deps(n):
+            visit(d, path + [n])
+        done.add(n)
+
+    for name in tunnels:
+        visit(name, [])
 
     sb = cfg["singbox"]
     if sb_on:
@@ -633,6 +652,20 @@ def parse_config(text: str) -> dict:
             raise ConfigError("singbox.rules должен быть списком")
     if not isinstance(cfg["updates"].get("components") or {}, dict):
         raise ConfigError("updates.components должен быть словарём")
+
+    # порты обфускаторов — последними: автоматический не должен занять порт, явно указанный
+    # для комбинатора (иначе ошибка «занят» досталась бы singbox.port/clash_api_port)
+    used_obfs = {o["listen_port"] for o in (t.get("obfuscator") for t in tunnels.values())
+                 if isinstance(o, dict) and o.get("listen_port")}
+    nxt = OBFS_PORT_BASE
+    for name in sorted(n for n, t in tunnels.items() if t.get("obfuscator")):
+        lp = tunnels[name]["obfuscator"].get("listen_port")
+        if lp is None:
+            while nxt in ports or nxt in used_obfs:
+                nxt += 1
+            lp = nxt
+        take_port(lp, f"{name}-obfs")
+        tunnels[name]["_obfs_port"] = lp
 
     # ── приложения (ярлыки pp-run) ──
     targets = run_targets(cfg)
@@ -729,9 +762,7 @@ def clash_secret(cfg: dict) -> str:
     if cfg["singbox"].get("secret"):
         return str(cfg["singbox"]["secret"])
     if not SECRET_FILE.exists():
-        CONF_DIR.mkdir(parents=True, exist_ok=True)
-        SECRET_FILE.write_text(secrets.token_hex(16))
-        SECRET_FILE.chmod(0o600)
+        write_if_changed(SECRET_FILE, secrets.token_hex(16), 0o600)  # сразу 600, без окна с 0644
     return SECRET_FILE.read_text().strip()
 
 
@@ -1489,44 +1520,49 @@ async def _apply_config() -> dict:
     if combiner:
         await _singbox_check(binary, combiner, "комбинатор")
 
+    keep: set[Path] = set()  # что записали в run/ при этом apply
+
+    def put(path: Path, content: str, mode: int | None = None) -> bool:
+        keep.add(path)
+        return write_if_changed(path, content, mode)
+
     for name, t in cfg["tunnels"].items():
         changed = False
         if t["native"]:
-            changed |= write_if_changed(RUN_DIR / f"{name}.json",
-                                        json.dumps(natives[name], indent=2, ensure_ascii=False) + "\n", 0o600)
+            changed |= put(RUN_DIR / f"{name}.json",
+                           json.dumps(natives[name], indent=2, ensure_ascii=False) + "\n", 0o600)
         elif "_config_src" in t:
             for path, text in render_config(name, t, cfg).items():
-                changed |= write_if_changed(path, text, 0o600)
+                changed |= put(path, text, 0o600)
         if t.get("_obfs_port"):
-            oc = write_if_changed(RUN_DIR / f"{name}-obfs.conf", render_obfs_conf(name, t), 0o600)
-            os_ = write_if_changed(RUN_DIR / f"{name}-obfs.sh",
-                                   _script(f"wg-obfuscator -c {shlex.quote(str(RUN_DIR / (name + '-obfs.conf')))}"),
-                                   0o700)
+            oc = put(RUN_DIR / f"{name}-obfs.conf", render_obfs_conf(name, t), 0o600)
+            os_ = put(RUN_DIR / f"{name}-obfs.sh",
+                      _script(f"wg-obfuscator -c {shlex.quote(str(RUN_DIR / (name + '-obfs.conf')))}"), 0o700)
             opath = UNIT_DIR / obfs_unit(name)
             onew = not opath.exists()
-            ou = write_if_changed(opath, render_obfs_unit(name))
+            ou = put(opath, render_obfs_unit(name))
             wanted[opath.name] = (onew, oc or os_ or ou, False)  # стартует вместе с туннелем
         if name in bridges:
-            hc = write_if_changed(RUN_DIR / f"{name}-http.json",
-                                  json.dumps(bridges[name], indent=2, ensure_ascii=False) + "\n", 0o600)
+            hc = put(RUN_DIR / f"{name}-http.json",
+                     json.dumps(bridges[name], indent=2, ensure_ascii=False) + "\n", 0o600)
             bridge_conf = shlex.quote(str(RUN_DIR / f"{name}-http.json"))
-            hs = write_if_changed(RUN_DIR / f"{name}-http.sh",
-                                  _script(f"{shlex.quote(binary or 'sing-box')} run -c {bridge_conf}"), 0o700)
+            hs = put(RUN_DIR / f"{name}-http.sh",
+                     _script(f"{shlex.quote(binary or 'sing-box')} run -c {bridge_conf}"), 0o700)
             hpath = UNIT_DIR / http_unit(name)
             hnew = not hpath.exists()
-            hu = write_if_changed(hpath, render_http_unit(name))
+            hu = put(hpath, render_http_unit(name))
             wanted[hpath.name] = (hnew, hc or hs or hu, False)  # стартует вместе с туннелем
-        changed |= write_if_changed(RUN_DIR / f"{name}.sh", render_script(name, t, cfg), 0o700)
+        changed |= put(RUN_DIR / f"{name}.sh", render_script(name, t, cfg), 0o700)
         upath = UNIT_DIR / unit_of(name)
         new = not upath.exists()
-        changed |= write_if_changed(upath, render_unit(name, t, cfg))
+        changed |= put(upath, render_unit(name, t, cfg))
         wanted[upath.name] = (new, changed, bool(t.get("autostart", True)))
 
     if combiner:
-        c1 = write_if_changed(SINGBOX_JSON, json.dumps(combiner, indent=2, ensure_ascii=False) + "\n", 0o600)
+        c1 = put(SINGBOX_JSON, json.dumps(combiner, indent=2, ensure_ascii=False) + "\n", 0o600)
         upath = UNIT_DIR / SINGBOX_UNIT
         new = not upath.exists()
-        c2 = write_if_changed(upath, render_singbox_unit(binary or str(BIN_DIR / "sing-box")))
+        c2 = put(upath, render_singbox_unit(binary or str(BIN_DIR / "sing-box")))
         wanted[SINGBOX_UNIT] = (new, c1 or c2, True)
 
     if UNIT_DIR.exists():
@@ -1536,10 +1572,13 @@ async def _apply_config() -> dict:
             touch(p.name)
             await sctl("disable", "--now", p.name)
             p.unlink(missing_ok=True)
-            base = p.stem[len(PREFIX):]
-            for f in RUN_DIR.glob(f"{base}.*"):
-                f.unlink(missing_ok=True)
             report["removed"].append(p.stem)
+
+    # всё в run/ генерирует панель: файлы, которые в этот раз не записаны, — от удалённых туннелей
+    # и выключенных опций (например, <имя>.wg.conf с ключами после снятия obfuscator)
+    for f in RUN_DIR.iterdir():
+        if f.is_file() and not f.name.startswith(".") and f not in keep:
+            f.unlink(missing_ok=True)
 
     write_run_helpers(cfg, report)
 

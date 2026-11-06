@@ -135,6 +135,15 @@ def test_ini_helpers(app):
         "[Socks5]\nBindAddress = 127.0.0.1:1"
 
 
+def test_ini_set_adds_key_into_existing_section(app):
+    # [Socks5] с авторизацией, но без BindAddress — ключ дописывается в неё, а не во вторую [Socks5]
+    text = "[Interface]\nPrivateKey = k\n\n[Socks5]\n# BindAddress = 1.2.3.4:1\nUsername = u\n\n[Peer]\nEndpoint = a:1\n"
+    out = app.ini_set(text, "Socks5", "BindAddress", "127.0.0.1:1083", add_section=True)
+    assert out.count("[Socks5]") == 1
+    assert "Username = u\nBindAddress = 127.0.0.1:1083\n\n[Peer]" in out
+    assert app.ini_values(out, "Socks5", "BindAddress") == ["127.0.0.1:1083"]
+
+
 def test_desktop_entry_quoting(app):
     assert app.desktop_arg("telegram-desktop") == "telegram-desktop"
     assert app.desktop_arg("50%") == "50%%"
@@ -153,3 +162,10 @@ def test_combiner_groups_ports(app):
                                   "default": "auto"}
     assert {"inbound": ["in-auto"], "outbound": "auto"} in sb["route"]["rules"]
     assert any(i["listen_port"] == 1090 for i in sb["inbounds"])
+
+
+def test_clash_secret_created_private(app, conf_dir):
+    app.SECRET_FILE.unlink(missing_ok=True)
+    s = app.clash_secret(app.parse_config(""))
+    assert len(s) == 32 and app.SECRET_FILE.stat().st_mode & 0o777 == 0o600
+    assert app.clash_secret(app.parse_config("")) == s

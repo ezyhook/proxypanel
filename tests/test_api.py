@@ -91,3 +91,28 @@ def test_port_busy_ignores_time_wait(app):
     cli.close()
     srv.close()
     assert not app.port_busy(port)
+
+
+# ── apply: уборка run/ ──
+def test_apply_removes_stale_run_files(client, app, write):
+    import asyncio
+    write("wp.conf", "[Interface]\nWGConfig = wg.conf\n")
+    write("wg.conf", "[Interface]\nPrivateKey = k\n[Peer]\nEndpoint = vps:1\n")
+    app.CONF_FILE.write_text("tunnels:\n  w: {kind: wireproxy, port: 1083, config: wp.conf, obfuscator: {key: k}}\n"
+                             "  gone: {port: 1084, cmd: 'ssh -D {port} h'}\n")
+    asyncio.run(app.apply_config())
+    run = app.RUN_DIR
+    assert {"w.wg.conf", "w-obfs.conf", "gone.sh"} <= {f.name for f in run.iterdir()}
+    # сняли obfuscator и удалили туннель: копия WGConfig с ключом и прочие хвосты не остаются
+    app.CONF_FILE.write_text("tunnels:\n  w: {kind: wireproxy, port: 1083, config: wp.conf}\n")
+    asyncio.run(app.apply_config())
+    names = {f.name for f in run.iterdir() if f.is_file()}
+    assert names == {"w.conf", "w.sh"}
+    assert (run / "env").is_dir()
+
+
+def test_obfs_auto_port_skips_combiner_ports(app, write):
+    write("wp.conf", "[Peer]\nEndpoint = vps:1\n")
+    cfg = app.parse_config("singbox: {enabled: true, port: 1080, clash_api_port: 52000}\n"
+                           "tunnels:\n  w: {kind: wireproxy, port: 1083, config: wp.conf, obfuscator: {key: k}}\n")
+    assert cfg["tunnels"]["w"]["_obfs_port"] == 52001
